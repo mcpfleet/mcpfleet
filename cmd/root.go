@@ -31,10 +31,9 @@ func init() {
 		newListCmd(),
 		newApplyCmd(),
 		newPushCmd(),
-		newSecretCmd(),
 	)
 
-	// Silence default error output - we handle it ourselves
+	// Silence default error output – we handle it ourselves
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = true
 
