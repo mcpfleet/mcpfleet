@@ -2,60 +2,64 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mcpfleet/mcpfleet/internal/registry"
 	"github.com/spf13/cobra"
 )
 
 var (
 	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED"))
-	nameStyle   = lipgloss.NewStyle().Bold(true)
-	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Italic(true)
 )
 
 func newListCmd() *cobra.Command {
-	var filterTag string
-
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List all MCP servers in your registry",
+		Use:     "list",
+		Short:   "List all MCP servers in your registry",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: fetch from registry
+			client, err := registry.NewClientFromConfig()
+			if err != nil {
+				return fmt.Errorf("registry client: %w", err)
+			}
+
+			servers, err := client.ListServers()
+			if err != nil {
+				return fmt.Errorf("list servers: %w", err)
+			}
+
+			if len(servers) == 0 {
+				fmt.Println("No servers registered.")
+				return nil
+			}
+
 			fmt.Println(headerStyle.Render("MCP Servers"))
 			fmt.Println()
 
-			// Placeholder output
-			servers := []struct {
-				Name        string
-				Description string
-				Tags        []string
-				Transport   string
-			}{
-				{"github", "GitHub MCP server", []string{"dev", "vcs"}, "stdio"},
-				{"linear", "Linear project management", []string{"dev", "pm"}, "stdio"},
-			}
-
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS\tURL")
+			fmt.Fprintln(w, "----\t-------\t----\t---")
 			for _, s := range servers {
-				if filterTag != "" {
-					found := false
-					for _, t := range s.Tags {
-						if t == filterTag {
-							found = true
-							break
-						}
-					}
-					if !found {
-						continue
-					}
+				command := ""
+				if s.Command != nil {
+					command = *s.Command
 				}
-				fmt.Printf("%s  %s  %s\n",
-					nameStyle.Render(s.Name),
-					s.Description,
-					tagStyle.Render(fmt.Sprintf("[%v]", s.Tags)),
-				)
+				argsStr := strings.Join(s.Args, " ")
+				url := ""
+				if s.URL != nil {
+					url = *s.URL
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, command, argsStr, url)
 			}
+			w.Flush()
 			return nil
 		},
 	}
+}
+
+func init() {
+	rootCmd.AddCommand(newListCmd())
 }
