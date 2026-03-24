@@ -41,26 +41,14 @@ func newListCmd() *cobra.Command {
 			fmt.Println()
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS\tURL")
-			fmt.Fprintln(w, "----\t-------\t----\t---")
+			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS")
+			fmt.Fprintln(w, "----\t-------\t----")
 			for _, s := range servers {
-				command := ""
-				if s.Command != nil {
-					command = *s.Command
-				}
 				argsStr := strings.Join(s.Args, " ")
-				url := ""
-				if s.URL != nil {
-					url = *s.URL
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, command, argsStr, url)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Command, argsStr)
 			}
 			w.Flush()
 			return nil
 		},
 	}
-}
-
-func init() {
-	rootCmd.AddCommand(newListCmd())
 }
