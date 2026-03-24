@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -21,12 +22,12 @@ func newListCmd() *cobra.Command {
 		Short:   "List all MCP servers in your registry",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := registry.NewClientFromConfig()
+			client, err := registry.New()
 			if err != nil {
 				return fmt.Errorf("registry client: %w", err)
 			}
 
-			servers, err := client.ListServers()
+			servers, err := client.ListServers(context.Background())
 			if err != nil {
 				return fmt.Errorf("list servers: %w", err)
 			}
