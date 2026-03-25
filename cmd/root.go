@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/log"
+	"github.com/mcpfleet/mcpfleet/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,10 @@ Examples:
   mcpfleet list
   mcpfleet apply --all cursor
   mcpfleet apply --tag dev claude-code`,
+	// When no subcommand is provided, show the TUI
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return tui.Run()
+	},
 }
 
 func Execute() error {
@@ -31,12 +36,11 @@ func init() {
 		newListCmd(),
 		newApplyCmd(),
 		newPushCmd(),
+		newDeleteCmd(),
 	)
-
 	// Silence default error output – we handle it ourselves
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = true
-
 	// Setup logger
 	log.SetOutput(os.Stderr)
 }
