@@ -16,12 +16,12 @@ func newDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			client, err := registry.NewClientFromConfig()
+			client, err := registry.New()
 			if err != nil {
 				return fmt.Errorf("registry client: %w", err)
 			}
 
-			if err := client.DeleteServer(name); err != nil {
+			if err := client.DeleteServer(cmd.Context(), name); err != nil {
 				return fmt.Errorf("delete server %q: %w", name, err)
 			}
 

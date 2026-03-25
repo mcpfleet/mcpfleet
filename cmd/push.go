@@ -10,16 +10,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// pushCmd reads a servers YAML file and upserts each server in the registry.
-var pushCmd = &cobra.Command{
-	Use:   "push [file]",
-	Short: "Push server definitions to the mcpfleet registry",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPush,
-}
-
-func init() {
-	rootCmd.AddCommand(pushCmd)
+func newPushCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "push [file]",
+		Short: "Push server definitions to the mcpfleet registry",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runPush,
+	}
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
@@ -42,23 +39,22 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	for _, srv := range servers {
 		existing, err := client.GetServer(cmd.Context(), srv.Name)
-		if err != nil && err.Error() != "server not found" {
+		if err != nil && err.Error() != "registry: not found" {
 			return fmt.Errorf("get server %q: %w", srv.Name, err)
 		}
 
+		s := srv
 		if existing != nil {
-			if _, err := client.UpdateServer(cmd.Context(), srv); err != nil {
+			if _, err := client.UpdateServer(cmd.Context(), srv.Name, &s); err != nil {
 				return fmt.Errorf("update server %q: %w", srv.Name, err)
 			}
 			fmt.Printf("updated  %s\n", srv.Name)
 		} else {
-			if _, err := client.CreateServer(cmd.Context(), srv); err != nil {
+			if _, err := client.CreateServer(cmd.Context(), &s); err != nil {
 				return fmt.Errorf("create server %q: %w", srv.Name, err)
 			}
 			fmt.Printf("created  %s\n", srv.Name)
 		}
 	}
-
-	fmt.Printf("pushed %d server(s)\n", len(servers))
 	return nil
 }
