@@ -61,7 +61,7 @@ Examples:
 				log.Warn("Could not open vault, secrets will not be resolved", "err", err)
 			} else {
 				for i := range servers {
-					servers[i].Env = v.Resolve(servers[i].Env)
+					servers[i].Env = resolveEnv(v, servers[i].Env)
 				}
 			}
 
@@ -69,15 +69,31 @@ Examples:
 			if err := adapter.Apply(servers); err != nil {
 				return fmt.Errorf("apply: %w", err)
 			}
-
-			fmt.Printf("✓ Applied %d MCP server(s) to %s\n", len(servers), agentName)
+			fmt.Printf("\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
 			return nil
 		},
 	}
-
 	cmd.Flags().BoolVar(&applyAll, "all", false, "Apply all servers from registry")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Filter servers by tag (can be used multiple times)")
 	return cmd
+}
+
+// resolveEnv substitutes vault secrets into an EnvVar map.
+func resolveEnv(v *vault.Vault, env map[string]schema.EnvVar) map[string]schema.EnvVar {
+	if len(env) == 0 {
+		return env
+	}
+	out := make(map[string]schema.EnvVar, len(env))
+	for k, ev := range env {
+		val := ev.Value
+		if ev.Secret != "" {
+			if secret, ok := v.Get(ev.Secret); ok {
+				val = secret
+			}
+		}
+		out[k] = schema.EnvVar{Value: val}
+	}
+	return out
 }
 
 // filterByTags returns servers that have at least one of the requested tags.

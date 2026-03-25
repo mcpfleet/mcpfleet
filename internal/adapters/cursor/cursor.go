@@ -59,7 +59,10 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			Args:    s.Args,
 		}
 		if len(s.Env) > 0 {
-			entry.Env = s.Env
+			entry.Env = make(map[string]string, len(s.Env))
+			for k, v := range s.Env {
+				entry.Env[k] = v.Value
+			}
 		}
 		cfg.McpServers[s.Name] = entry
 	}
@@ -82,11 +85,15 @@ func (a *Adapter) List() ([]schema.Server, error) {
 	}
 	var servers []schema.Server
 	for name, entry := range cfg.McpServers {
+		env := make(map[string]schema.EnvVar, len(entry.Env))
+		for k, v := range entry.Env {
+			env[k] = schema.EnvVar{Value: v}
+		}
 		servers = append(servers, schema.Server{
 			Name:    name,
 			Command: entry.Command,
 			Args:    entry.Args,
-			Env:     entry.Env,
+			Env:     env,
 		})
 	}
 	return servers, nil

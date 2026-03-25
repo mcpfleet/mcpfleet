@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -21,12 +22,12 @@ func newListCmd() *cobra.Command {
 		Short:   "List all MCP servers in your registry",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := registry.NewClientFromConfig()
+			client, err := registry.New()
 			if err != nil {
 				return fmt.Errorf("registry client: %w", err)
 			}
 
-			servers, err := client.ListServers()
+			servers, err := client.ListServers(context.Background())
 			if err != nil {
 				return fmt.Errorf("list servers: %w", err)
 			}
@@ -40,26 +41,14 @@ func newListCmd() *cobra.Command {
 			fmt.Println()
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS\tURL")
-			fmt.Fprintln(w, "----\t-------\t----\t---")
+			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS")
+			fmt.Fprintln(w, "----\t-------\t----")
 			for _, s := range servers {
-				command := ""
-				if s.Command != nil {
-					command = *s.Command
-				}
 				argsStr := strings.Join(s.Args, " ")
-				url := ""
-				if s.URL != nil {
-					url = *s.URL
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.Name, command, argsStr, url)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Command, argsStr)
 			}
 			w.Flush()
 			return nil
 		},
 	}
-}
-
-func init() {
-	rootCmd.AddCommand(newListCmd())
 }

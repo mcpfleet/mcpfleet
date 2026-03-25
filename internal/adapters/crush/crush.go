@@ -42,7 +42,6 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
 		return fmt.Errorf("crush: create config dir: %w", err)
 	}
-
 	cfg := crushConfig{McpServers: make(map[string]mcpEntry)}
 	if data, err := os.ReadFile(cfgPath); err == nil {
 		_ = json.Unmarshal(data, &cfg)
@@ -50,18 +49,19 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			cfg.McpServers = make(map[string]mcpEntry)
 		}
 	}
-
 	for _, s := range servers {
 		entry := mcpEntry{
 			Command: s.Command,
 			Args:    s.Args,
 		}
 		if len(s.Env) > 0 {
-			entry.Env = s.Env
+			entry.Env = make(map[string]string, len(s.Env))
+			for k, v := range s.Env {
+				entry.Env[k] = v.Value
+			}
 		}
 		cfg.McpServers[s.Name] = entry
 	}
-
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("crush: marshal config: %w", err)
@@ -80,11 +80,15 @@ func (a *Adapter) List() ([]schema.Server, error) {
 	}
 	var servers []schema.Server
 	for name, entry := range cfg.McpServers {
+		env := make(map[string]schema.EnvVar, len(entry.Env))
+		for k, v := range entry.Env {
+			env[k] = schema.EnvVar{Value: v}
+		}
 		servers = append(servers, schema.Server{
 			Name:    name,
 			Command: entry.Command,
 			Args:    entry.Args,
-			Env:     entry.Env,
+			Env:     env,
 		})
 	}
 	return servers, nil

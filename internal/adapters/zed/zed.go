@@ -48,36 +48,35 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
 		return fmt.Errorf("zed: create config dir: %w", err)
 	}
-
 	// Zed settings may contain many other keys – we must do a surgical merge
 	// using a raw map so we don't clobber unrelated settings.
 	raw := make(map[string]json.RawMessage)
 	if data, err := os.ReadFile(cfgPath); err == nil {
 		_ = json.Unmarshal(data, &raw)
 	}
-
 	// Decode existing context_servers (if any).
 	contextServers := make(map[string]contextServer)
 	if existing, ok := raw["context_servers"]; ok {
 		_ = json.Unmarshal(existing, &contextServers)
 	}
-
 	for _, s := range servers {
+		env := make(map[string]string, len(s.Env))
+		for k, v := range s.Env {
+			env[k] = v.Value
+		}
 		contextServers[s.Name] = contextServer{
 			Command: contextCommand{
 				Path: s.Command,
 				Args: s.Args,
-				Env:  s.Env,
+				Env:  env,
 			},
 		}
 	}
-
 	encoded, err := json.Marshal(contextServers)
 	if err != nil {
 		return fmt.Errorf("zed: encode context_servers: %w", err)
 	}
 	raw["context_servers"] = encoded
-
 	out, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return fmt.Errorf("zed: marshal settings: %w", err)
@@ -96,11 +95,15 @@ func (a *Adapter) List() ([]schema.Server, error) {
 	}
 	var servers []schema.Server
 	for name, cs := range cfg.ContextServers {
+		env := make(map[string]schema.EnvVar, len(cs.Command.Env))
+		for k, v := range cs.Command.Env {
+			env[k] = schema.EnvVar{Value: v}
+		}
 		servers = append(servers, schema.Server{
 			Name:    name,
 			Command: cs.Command.Path,
 			Args:    cs.Command.Args,
-			Env:     cs.Command.Env,
+			Env:     env,
 		})
 	}
 	return servers, nil
