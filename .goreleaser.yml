@@ -1,0 +1,66 @@
+version: 2
+
+project_name: mcpfleet
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mcpfleet
+    main: ./cmd/mcpfleet
+    binary: mcpfleet
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: mcpfleet
+    name: mcpfleet
+  draft: false
+  prerelease: auto
+  name_template: '{{.ProjectName}} {{.Tag}}'
+
+brew:
+  - name: mcpfleet
+    homepage: 'https://mcpfleet.dev'
+    description: 'Vendor-agnostic CLI to manage and apply MCP server definitions across AI coding agents'
+    license: MIT
+    repository:
+      owner: mcpfleet
+      name: homebrew-tap
