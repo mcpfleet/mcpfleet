@@ -1,115 +1,152 @@
+<div align="center">
+
 # mcpfleet
 
-> Vendor-agnostic CLI to manage and apply MCP server definitions across AI coding agents
+**Vendor-agnostic CLI to manage and apply MCP server definitions across AI coding agents**
 
+[![CI](https://github.com/mcpfleet/mcpfleet/actions/workflows/ci.yml/badge.svg)](https://github.com/mcpfleet/mcpfleet/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/go-1.23-blue)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/mcpfleet/mcpfleet)](https://github.com/mcpfleet/mcpfleet/releases)
 
-## What is mcpfleet?
+[Website](https://mcpfleet.dev) · [Registry API](https://github.com/mcpfleet/mcpfleet-registry) · [Report a bug](https://github.com/mcpfleet/mcpfleet/issues)
 
-`mcpfleet` solves a simple but painful problem: when you use multiple AI coding agents (Cursor, Claude Code, Windsurf, Zed...) across multiple machines, keeping your MCP server configurations in sync is a mess.
+</div>
 
-With mcpfleet, you define your MCP servers once in a central registry, store secrets securely in a vault, and apply them to any agent with a single command.
+---
+
+## The problem
+
+You use multiple AI coding agents — Cursor, Claude Code, Windsurf, Zed, Crush. Each has its own config file in a different location. Every time you add an MCP server or switch machines, you have to update each config manually.
+
+**mcpfleet** fixes this. Define your MCP servers once in a central registry, then apply them everywhere with a single command.
 
 ```
-new VPS / machine
-    |
-    v
-curl -fsSL https://mcpfleet.dev/install.sh | sh
-    |
-    v
-mcpfleet auth login
-    |
-    v
-mcpfleet apply --all crush
-    |
-    v
-All your MCP servers are ready.
+new machine setup:
+  curl -fsSL https://mcpfleet.dev/install.sh | sh
+  mcpfleet auth login
+  mcpfleet apply --all cursor
+  # done.
 ```
 
-## Quick Start
+## Features
+
+- 📦 **Central registry** — all your MCP server definitions in one place
+- 🔐 **Encrypted vault** — secrets stored with AES-256-GCM, keys in OS keyring
+- 🤖 **Multi-agent support** — cursor, claude-code, windsurf, zed, crush
+- 🏷️ **Tag filtering** — apply only servers tagged `dev`, `vcs`, etc.
+- 🔄 **Non-destructive merge** — existing agent configs are preserved
+- ↔️ **Cross-platform** — macOS, Linux, Windows (amd64 + arm64)
+
+## Installation
+
+### Homebrew (macOS / Linux)
 
 ```bash
-# Install
-curl -fsSL https://mcpfleet.dev/install.sh | sh
+brew install mcpfleet/tap/mcpfleet
+```
 
-# Authenticate with your registry
+### curl (Linux / macOS)
+
+```bash
+curl -fsSL https://mcpfleet.dev/install.sh | sh
+```
+
+### Go install
+
+```bash
+go install github.com/mcpfleet/mcpfleet/cmd/mcpfleet@latest
+```
+
+### Download binary
+
+Grab the latest binary from [GitHub Releases](https://github.com/mcpfleet/mcpfleet/releases).
+
+## Quick start
+
+```bash
+# 1. Authenticate with the registry
 mcpfleet auth login
 
-# List available MCP servers
-mcpfleet list
+# 2. Push an MCP server definition
+mcpfleet push my-server \
+  --command npx \
+  --args "-y,@modelcontextprotocol/server-filesystem" \
+  --tag dev
 
-# Apply all servers to an agent
+# 3. Apply all servers to Cursor
 mcpfleet apply --all cursor
 
-# Apply only tagged servers
+# 4. Apply only 'dev'-tagged servers to Claude Code
 mcpfleet apply --tag dev claude-code
 
-# Push a new server definition
-mcpfleet push github.yaml
+# 5. List all servers in the registry
+mcpfleet list
 
-# Manage secrets
-mcpfleet secret set github_token ghp_xxxx
+# 6. Remove a server
+mcpfleet delete my-server
 ```
 
-## Server Definition Format
+## Supported agents
 
-```yaml
-name: github
-description: GitHub MCP server
-transport: stdio
+| Agent | Config path |
+|-------|-------------|
+| `cursor` | `~/.cursor/mcp.json` |
+| `claude-code` | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| `windsurf` | `~/.codeium/windsurf/mcp_config.json` |
+| `zed` | `~/.config/zed/settings.json` |
+| `crush` | `~/.config/crush/mcp.json` |
 
-install:
-  type: npx
-  package: "@modelcontextprotocol/server-github"
-  version: latest
-
-command: npx
-args: ["-y", "@modelcontextprotocol/server-github"]
-
-env:
-  GITHUB_TOKEN:
-    secret: github_token   # pulled from mcpfleet vault
-
-tags: [dev, vcs]
-platforms: [linux, darwin, windows]
-```
-
-## Supported Agents
-
-| Agent | Config path | Status |
-|---|---|---|
-| Cursor | `~/.cursor/mcp.json` | Planned |
-| Claude Code | `~/.claude.json` | Planned |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | Planned |
-| Zed | `~/.config/zed/settings.json` | Planned |
-| Kilo Code | VS Code `settings.json` | Planned |
-| Crush | TBD | Planned |
-
-## Architecture
+## Commands
 
 ```
-mcpfleet/
-├── cmd/mcpfleet/     # CLI entrypoint
-├── cmd/              # Cobra commands (apply, auth, list, push, secret)
-├── internal/
-│   ├── schema/       # Server definition types
-│   ├── adapters/     # Per-agent config writers (planned)
-│   ├── registry/     # Registry HTTP client (planned)
-│   ├── vault/        # Secret management (planned)
-│   └── installer/    # Runtime installer - npx, uvx, docker (planned)
-└── tui/              # Bubble Tea TUI components (planned)
+mcpfleet auth login          Authenticate with the registry
+mcpfleet list                List all MCP servers in the registry
+mcpfleet push <name>         Add or update an MCP server definition
+mcpfleet pull                Pull latest server definitions from registry
+mcpfleet apply <agent>       Apply registry servers to an agent config
+  --all                        Apply all servers (ignore tag filter)
+  --tag <tag>                  Apply only servers with the given tag
+mcpfleet delete <name>       Remove an MCP server from the registry
 ```
 
-## Tech Stack
+## Configuration
 
-- **Go 1.23** – single static binary, zero runtime dependencies
-- **[Cobra](https://github.com/spf13/cobra)** – CLI framework
-- **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** – TUI framework
-- **[Lip Gloss](https://github.com/charmbracelet/lipgloss)** – terminal styling
-- **[Huh](https://github.com/charmbracelet/huh)** – interactive forms
-- **[go-keyring](https://github.com/zalando/go-keyring)** – secure token storage
+mcpfleet reads its registry URL from:
+1. `MCPFLEET_REGISTRY_URL` environment variable
+2. `~/.config/mcpfleet/registry_url` file
+3. Default: `https://registry.mcpfleet.dev`
+
+The auth token is stored in `~/.config/mcpfleet/token` after `mcpfleet auth login`.
+
+## Self-hosting
+
+You can run your own registry with [mcpfleet-registry](https://github.com/mcpfleet/mcpfleet-registry):
+
+```bash
+git clone https://github.com/mcpfleet/mcpfleet-registry
+cd mcpfleet-registry
+docker compose up -d
+
+# Point mcpfleet at your instance
+export MCPFLEET_REGISTRY_URL=http://localhost:8080
+mcpfleet auth login
+```
+
+## Development
+
+```bash
+git clone https://github.com/mcpfleet/mcpfleet
+cd mcpfleet
+go mod tidy
+go test ./...
+go build -o mcpfleet ./cmd/mcpfleet
+```
+
+## Contributing
+
+Pull requests are welcome! Please open an issue first to discuss major changes.
 
 ## License
 
-MIT © [Paweł Wlazło](https://github.com/pawelwlazlo)
+[MIT](LICENSE)
