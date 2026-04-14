@@ -16,16 +16,16 @@ import (
 // Everforest-inspired color palette
 var (
 	// Core colors
-	colorBg       = lipgloss.Color("#2d353b")
-	colorFg       = lipgloss.Color("#d3c6aa")
-	colorSubtle   = lipgloss.Color("#859289")
-	colorAccent   = lipgloss.Color("#a7c080")  // green
-	colorTeal     = lipgloss.Color("#83c092")  // teal
-	colorBlue     = lipgloss.Color("#7fbbb3")  // blue
-	colorOrange   = lipgloss.Color("#e69875")  // orange
-	colorYellow   = lipgloss.Color("#dbbc7f")  // yellow
-	colorRed      = lipgloss.Color("#e67e80")  // red
-	colorBorder   = lipgloss.Color("#475258")
+	colorBg     = lipgloss.Color("#2d353b")
+	colorFg     = lipgloss.Color("#d3c6aa")
+	colorSubtle = lipgloss.Color("#859289")
+	colorAccent = lipgloss.Color("#a7c080") // green
+	colorTeal   = lipgloss.Color("#83c092") // teal
+	colorBlue   = lipgloss.Color("#7fbbb3") // blue
+	colorOrange = lipgloss.Color("#e69875") // orange
+	colorYellow = lipgloss.Color("#dbbc7f") // yellow
+	colorRed    = lipgloss.Color("#e67e80") // red
+	colorBorder = lipgloss.Color("#475258")
 )
 
 // Styles
@@ -168,9 +168,9 @@ func (m model) View() string {
 
 	// Header with logo
 	logo := `
- ┏┳┓┏━╸┏━┓┏━╸╻  ┏━╸┏━╸╻ 
- ┃┃┃┃  ┣━┛┣╸ ┃  ┣╸ ┣╸ ┃ 
- ╹ ╹┗━╸╹  ╹  ┗━╸┗━╸┗━╸┗━╸
+ ┏┳┓┏━╸┏━┓┏━╸╻  ┏━╸┏━╸╻
+ ┃┃┃┃  ┣━┛┣╸ ┃  ┣╸ ┣╸ ┃
+ ╹ ╹┗━╸╹  ╹  ┗━╸╹  ╹  ╹
 `
 	b.WriteString(headerStyle.Render(logo))
 	b.WriteString("\n")
