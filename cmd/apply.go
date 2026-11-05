@@ -103,7 +103,7 @@ func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) (
 	for _, s := range servers {
 		for _, k := range sortedKeys(s.Env) {
 			if ref := s.Env[k].Secret; ref != "" {
-				refs = append(refs, fmt.Sprintf("%s (server %s, env %s)", ref, s.Name, k))
+				refs = append(refs, describeRef(s.Name, k, ref))
 			}
 		}
 	}
@@ -132,7 +132,7 @@ func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) (
 			}
 			val, ok := store.Get(ev.Secret)
 			if !ok {
-				missing = append(missing, fmt.Sprintf("%s (server %s, env %s)", ev.Secret, s.Name, k))
+				missing = append(missing, describeRef(s.Name, k, ev.Secret))
 				continue
 			}
 			env[k] = schema.EnvVar{Value: val}
@@ -143,6 +143,11 @@ func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) (
 		return nil, fmt.Errorf("missing secrets in vault: %s; set them with: mcpfleet secret set <name>", strings.Join(missing, ", "))
 	}
 	return out, nil
+}
+
+// describeRef names a secret reference for error messages.
+func describeRef(server, envKey, secret string) string {
+	return fmt.Sprintf("%s (server %s, env %s)", secret, server, envKey)
 }
 
 func sortedKeys(env map[string]schema.EnvVar) []string {
