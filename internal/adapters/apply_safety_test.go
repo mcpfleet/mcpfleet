@@ -14,11 +14,12 @@ import (
 
 // serversKey maps each adapter to the top-level key holding its MCP servers.
 var serversKey = map[string]string{
-	"cursor":      "mcpServers",
-	"claude-code": "mcpServers",
-	"windsurf":    "mcpServers",
-	"crush":       "mcpServers",
-	"zed":         "context_servers",
+	"cursor":         "mcpServers",
+	"claude-code":    "mcpServers",
+	"claude-desktop": "mcpServers",
+	"windsurf":       "mcpServers",
+	"crush":          "mcpServers",
+	"zed":            "context_servers",
 }
 
 // isolate points every config location at a fresh temp dir.
@@ -29,6 +30,7 @@ func isolate(t *testing.T) {
 	t.Setenv("USERPROFILE", dir)
 	t.Setenv("APPDATA", filepath.Join(dir, "AppData"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 }
 
 // forEachAdapter runs fn for every registered adapter in an isolated home.

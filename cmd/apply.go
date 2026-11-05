@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
@@ -22,13 +23,18 @@ func newApplyCmd() *cobra.Command {
 		Short: "Apply MCP server definitions to an agent",
 		Long: `Apply MCP server definitions from your registry to a specific AI coding agent.
 
-Supported agents: cursor, claude-code, windsurf, zed, crush
+Supported agents: ` + strings.Join(adapters.Names(), ", ") + `
+
+claude-code writes to Claude Code's user config (~/.claude.json, or
+$CLAUDE_CONFIG_DIR/.claude.json); claude-desktop writes to the Claude Desktop
+app's claude_desktop_config.json.
 
 Examples:
   mcpfleet apply cursor
   mcpfleet apply --all cursor
   mcpfleet apply --tag dev cursor
-  mcpfleet apply --tag dev --tag vcs claude-code`,
+  mcpfleet apply --tag dev --tag vcs claude-code
+  mcpfleet apply claude-desktop`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentName := args[0]
