@@ -84,7 +84,8 @@ func TestApply_OmitsEmptyArgsAndEnv(t *testing.T) {
 }
 
 func TestApply_SecretRefWritesEmptyValue(t *testing.T) {
-	// Apply writes EnvVar.Value only; secret references are not resolved here.
+	// Apply writes EnvVar.Value only: cmd/apply resolves secret references
+	// from the vault into Value before calling Apply.
 	isolate(t)
 	a := windsurf.New()
 	require.NoError(t, a.Apply([]schema.Server{{

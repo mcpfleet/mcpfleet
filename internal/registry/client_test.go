@@ -203,7 +203,7 @@ func TestCanceledContext(t *testing.T) {
 }
 
 func TestNew_WithoutToken(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setHome(t)
 	_, err := New()
 	assert.ErrorContains(t, err, "not authenticated")
 }
