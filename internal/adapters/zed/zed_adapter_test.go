@@ -129,9 +129,12 @@ func TestList_MissingFile(t *testing.T) {
 }
 
 func TestList_ReadsJSONCSettings(t *testing.T) {
-	t.Skip("known bug: List parses settings.json as plain JSON and fails on comments/trailing commas, unlike Apply")
 	setup(t, jsoncSettings)
 	got, err := zed.New().List()
 	require.NoError(t, err)
-	assert.Len(t, got, 2)
+	commands := map[string]string{}
+	for _, s := range got {
+		commands[s.Name] = s.Command
+	}
+	assert.Equal(t, map[string]string{"old": "a", "replace-me": "stale"}, commands)
 }

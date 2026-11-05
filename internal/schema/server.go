@@ -9,6 +9,7 @@ type Server struct {
 	Transport   string            `yaml:"transport" json:"transport"` // stdio | sse | http
 	Install     InstallConfig     `yaml:"install" json:"install"`
 	Command     string            `yaml:"command" json:"command"`
+	URL         string            `yaml:"url,omitempty" json:"url,omitempty"` // http | sse only: the remote server address
 	Args        []string          `yaml:"args,omitempty" json:"args,omitempty"`
 	Env         map[string]EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
 	Tags        []string          `yaml:"tags,omitempty" json:"tags,omitempty"`

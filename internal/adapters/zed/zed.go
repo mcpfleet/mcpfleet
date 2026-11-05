@@ -255,8 +255,13 @@ func (a *Adapter) List() ([]schema.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zed: read config: %w", err)
 	}
+	// Zed writes settings.json as JSONC (comments, trailing commas).
+	std, err := hujson.Standardize(data)
+	if err != nil {
+		return nil, fmt.Errorf("zed: parse config: %w", err)
+	}
 	var cfg zedSettings
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if err := json.Unmarshal(std, &cfg); err != nil {
 		return nil, fmt.Errorf("zed: parse config: %w", err)
 	}
 	var servers []schema.Server
