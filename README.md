@@ -17,7 +17,7 @@
 
 ## The problem
 
-You use multiple AI coding agents — Cursor, Claude Code, Windsurf, Zed, Crush. Each has its own config file in a different location. Every time you add an MCP server or switch machines, you have to update each config manually.
+You use multiple AI coding agents — Cursor, Claude Code, Claude Desktop, Windsurf, Zed, Crush. Each has its own config file in a different location. Every time you add an MCP server or switch machines, you have to update each config manually.
 
 **mcpfleet** fixes this. Define your MCP servers once in a central registry, then apply them everywhere with a single command.
 
@@ -33,7 +33,7 @@ new machine setup:
 
 - 📦 **Central registry** — all your MCP server definitions in one place
 - 🔐 **Encrypted vault** — secrets stored with AES-256-GCM, keys in OS keyring
-- 🤖 **Multi-agent support** — cursor, claude-code, windsurf, zed, crush
+- 🤖 **Multi-agent support** — claude-code, claude-desktop, crush, cursor, windsurf, zed
 - 🏷️ **Tag filtering** — apply only servers tagged `dev`, `vcs`, etc.
 - 🔄 **Non-destructive merge** — existing agent configs are preserved
 - ↔️ **Cross-platform** — macOS, Linux, Windows (amd64 + arm64)
@@ -91,11 +91,16 @@ mcpfleet delete my-server
 
 | Agent | Config path |
 |-------|-------------|
+| `claude-code` | `~/.claude.json` (`mcpServers`, user scope); `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set |
+| `claude-desktop` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`; other: `~/.claude/claude_desktop_config.json` |
+| `crush` | `~/.config/crush/mcp.json` |
 | `cursor` | `~/.cursor/mcp.json` |
-| `claude-code` | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | `windsurf` | `~/.codeium/windsurf/mcp_config.json` |
 | `zed` | `~/.config/zed/settings.json` |
-| `crush` | `~/.config/crush/mcp.json` |
+
+`claude-code` adds servers to Claude Code's user scope, the same place `claude mcp add -s user` writes to, so they are available in every project. `~/.claude.json` also holds the rest of Claude Code's state (login, projects); `apply` changes only the `mcpServers` entries it writes and keeps the file's `0600` permissions. Claude Code may rewrite this file while it runs, so run `apply claude-code` with Claude Code closed, or start a new session afterwards, and check the result with `claude mcp list`.
+
+> **Upgrading from an earlier version:** `apply claude-code` used to write to Claude Desktop's `claude_desktop_config.json`. Servers applied that way stay there. To keep updating that file, use `mcpfleet apply claude-desktop`.
 
 ### How `apply` changes your config
 
