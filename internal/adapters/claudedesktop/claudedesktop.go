@@ -30,18 +30,30 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "claude-desktop" }
 
-// ConfigPath returns claude_desktop_config.json: %APPDATA%\Claude on Windows,
-// ~/Library/Application Support/Claude on macOS, ~/.claude elsewhere.
+// ConfigPath returns Claude Desktop's claude_desktop_config.json for the
+// current OS and environment.
 func (a *Adapter) ConfigPath() string {
 	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
+	return configPath(runtime.GOOS, home, os.Getenv)
+}
+
+// configPath returns claude_desktop_config.json in Claude Desktop's data
+// directory for the given OS, home directory and environment:
+// %APPDATA%\Claude on Windows, ~/Library/Application Support/Claude on macOS,
+// and $XDG_CONFIG_HOME/Claude (~/.config/Claude when the variable is unset)
+// on Linux and other Unix systems, where Electron puts the app's data.
+func configPath(goos, home string, getenv func(string) string) string {
+	switch goos {
 	case "windows":
-		return filepath.Join(os.Getenv("APPDATA"), "Claude", "claude_desktop_config.json")
+		return filepath.Join(getenv("APPDATA"), "Claude", "claude_desktop_config.json")
 	case "darwin":
 		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-	default:
-		return filepath.Join(home, ".claude", "claude_desktop_config.json")
 	}
+	dir := getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "Claude", "claude_desktop_config.json")
 }
 
 func (a *Adapter) Apply(servers []schema.Server) error {

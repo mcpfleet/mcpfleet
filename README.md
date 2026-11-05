@@ -119,7 +119,7 @@ printf '%s' "$GITHUB_TOKEN" | mcpfleet secret set github_token --stdin
 | Agent | Config path |
 |-------|-------------|
 | `claude-code` | `~/.claude.json` (`mcpServers`, user scope); `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set |
-| `claude-desktop` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`; other: `~/.claude/claude_desktop_config.json` |
+| `claude-desktop` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`; Linux and other systems: `~/.config/Claude/claude_desktop_config.json`, or `$XDG_CONFIG_HOME/Claude/claude_desktop_config.json` when `XDG_CONFIG_HOME` is set |
 | `crush` | `~/.config/crush/crush.json` (`mcp`); `$XDG_CONFIG_HOME/crush/crush.json` when `XDG_CONFIG_HOME` is set; `$CRUSH_GLOBAL_CONFIG/crush.json` when `CRUSH_GLOBAL_CONFIG` is set. The same `~/.config` location is used on Windows (`%USERPROFILE%\.config\crush\crush.json`) |
 | `cursor` | `~/.cursor/mcp.json` |
 | `windsurf` | `~/.codeium/windsurf/mcp_config.json` (`mcpServers`); Windows: `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
@@ -130,6 +130,8 @@ printf '%s' "$GITHUB_TOKEN" | mcpfleet secret set github_token --stdin
 > **Upgrading from an earlier version:** `apply claude-code` used to write to Claude Desktop's `claude_desktop_config.json`. Servers applied that way stay there. To keep updating that file, use `mcpfleet apply claude-desktop`.
 
 `crush` writes Crush's global `crush.json`, each server under `mcp` with `"type": "stdio"`. Crush still reads `crush.json` but marks the JSON format as deprecated in favour of its `crushrc` script; if a `crushrc` in the same directory defines a server with the same name, that one wins. Crush expands `$VAR` and `$(...)` in `args` and `env`, so a value containing `$` is interpreted by Crush. Earlier versions of mcpfleet wrote `~/.config/crush/mcp.json`, which Crush never reads; run `mcpfleet apply crush` again and delete the old file.
+
+On Linux, `claude-desktop` used to write `~/.claude/claude_desktop_config.json`, which Claude Desktop does not read. Run `mcpfleet apply claude-desktop` again; the old file can be deleted.
 
 On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which Windsurf does not read. Run `mcpfleet apply windsurf` again; the old file can be deleted.
 
