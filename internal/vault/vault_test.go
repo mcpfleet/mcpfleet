@@ -126,6 +126,7 @@ func TestSaveOpenAt_RoundTrip(t *testing.T) {
 func TestOpenAt_TooShortFile(t *testing.T) {
 	freshKeyring(t)
 	path := vaultPath(t)
+	require.NoError(t, keyring.Set("mcpfleet", "vault-key", "some-key"))
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	require.NoError(t, os.WriteFile(path, []byte("short"), 0o600))
 
@@ -154,10 +155,116 @@ func TestOpenAt_DifferentKey(t *testing.T) {
 	path := vaultPath(t)
 	saved(t, path, map[string]string{"k": "v"})
 
-	keyring.MockInit() // empty keyring: OpenAt generates a new, different key
+	// Another key in the keyring (e.g. restored from the wrong machine).
+	require.NoError(t, keyring.Set("mcpfleet", "vault-key", "a-different-key"))
 	_, err := vault.OpenAt(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "vault: decrypt")
+}
+
+func TestOpenAt_MissingKeyIsNotRegenerated(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	keyring.MockInit() // the vault file stays, its key is gone
+	_, err := vault.OpenAt(path)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyMissing), "got %v", err)
+	assert.Contains(t, err.Error(), path)
+	assert.Contains(t, err.Error(), "restore the key, or move the file aside")
+
+	_, err = keyring.Get("mcpfleet", "vault-key")
+	assert.ErrorIs(t, err, keyring.ErrNotFound, "OpenAt stored a new key")
+}
+
+// flakyKeyring fails every Get with a non-"not found" error and counts Set.
+type flakyKeyring struct{ sets int }
+
+func (f *flakyKeyring) Get(string, string) (string, error) {
+	return "", errors.New("dbus: no session")
+}
+
+func (f *flakyKeyring) Set(string, string, string) error {
+	f.sets++
+	return nil
+}
+
+func TestOpenAt_KeyringErrorKeepsKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	_, err := vault.OpenAt(path)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Contains(t, err.Error(), "dbus: no session")
+	assert.Contains(t, err.Error(), "unlock the keyring")
+	assert.Zero(t, fk.sets, "OpenAt overwrote the key")
+}
+
+func TestSave_KeyringErrorKeepsKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	v, err := vault.OpenAt(path) // no file yet: no key needed
+	require.NoError(t, err)
+	saved(t, path, map[string]string{"k": "v"}) // file and key appear meanwhile
+
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	v.Set("other", "x")
+	err = v.Save()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Contains(t, err.Error(), "unlock the keyring")
+	assert.Zero(t, fk.sets, "Save overwrote the key")
+}
+
+func TestSave_NewVaultKeyringErrorKeepsKey(t *testing.T) {
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	v, err := vault.OpenAt(vaultPath(t))
+	require.NoError(t, err)
+	v.Set("k", "v")
+	err = v.Save()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Zero(t, fk.sets, "Save created a key although the keyring could not be read")
+}
+
+func TestSave_MissingKeyWithExistingFileIsNotRegenerated(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	v, err := vault.OpenAt(path) // no file yet: no key needed
+	require.NoError(t, err)
+	saved(t, path, map[string]string{"k": "v"}) // file appears meanwhile
+
+	keyring.MockInit() // ...and its key is gone
+	v.Set("other", "x")
+	err = v.Save()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vault.ErrKeyMissing)
+	assert.Contains(t, err.Error(), "restore the key, or move the file aside")
+
+	_, err = keyring.Get("mcpfleet", "vault-key")
+	assert.ErrorIs(t, err, keyring.ErrNotFound, "Save stored a new key")
+}
+
+func TestSave_NewVaultCreatesKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	_, err := keyring.Get("mcpfleet", "vault-key")
+	require.NoError(t, err, "first save did not store a key")
+
+	v, err := vault.OpenAt(path)
+	require.NoError(t, err)
+	got, ok := v.Get("k")
+	assert.True(t, ok)
+	assert.Equal(t, "v", got)
 }
 
 func TestKeyringError(t *testing.T) {
@@ -169,14 +276,16 @@ func TestKeyringError(t *testing.T) {
 
 	_, err := vault.OpenAt(path)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "vault: get key")
+	assert.ErrorIs(t, err, vault.ErrKeyringUnavailable)
+	assert.Contains(t, err.Error(), "keyring locked")
+	assert.Contains(t, err.Error(), "unlock the keyring")
 
 	v, err := vault.OpenAt(vaultPath(t)) // missing file needs no key
 	require.NoError(t, err)
 	v.Set("k", "v")
 	err = v.Save()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "vault: get key")
+	assert.ErrorIs(t, err, vault.ErrKeyringUnavailable)
 	assert.Contains(t, err.Error(), "keyring locked")
 }
 
