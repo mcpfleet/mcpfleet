@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://registry.mcpfleet.dev"
-	tokenFile      = "token"
+	defaultBaseURL  = "https://registry.mcpfleet.dev"
+	tokenFile       = "token"
 	registryURLFile = "registry_url"
 )
 

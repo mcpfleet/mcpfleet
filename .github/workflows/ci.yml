@@ -17,6 +17,12 @@ jobs:
         with:
           go-version: '1.23'
 
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          echo "$unformatted"
+          test -z "$unformatted"
+
       - name: Tidy and download dependencies
         run: |
           go mod tidy
