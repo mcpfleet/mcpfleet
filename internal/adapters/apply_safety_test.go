@@ -31,6 +31,7 @@ func isolate(t *testing.T) {
 	t.Setenv("APPDATA", filepath.Join(dir, "AppData"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CRUSH_GLOBAL_CONFIG", "")
 }
 
 // forEachAdapter runs fn for every registered adapter in an isolated home.
