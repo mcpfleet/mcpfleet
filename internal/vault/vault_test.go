@@ -126,6 +126,7 @@ func TestSaveOpenAt_RoundTrip(t *testing.T) {
 func TestOpenAt_TooShortFile(t *testing.T) {
 	freshKeyring(t)
 	path := vaultPath(t)
+	require.NoError(t, keyring.Set("mcpfleet", "vault-key", "some-key"))
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	require.NoError(t, os.WriteFile(path, []byte("short"), 0o600))
 
@@ -154,7 +155,8 @@ func TestOpenAt_DifferentKey(t *testing.T) {
 	path := vaultPath(t)
 	saved(t, path, map[string]string{"k": "v"})
 
-	keyring.MockInit() // empty keyring: OpenAt generates a new, different key
+	// Another key in the keyring (e.g. restored from the wrong machine).
+	require.NoError(t, keyring.Set("mcpfleet", "vault-key", "a-different-key"))
 	_, err := vault.OpenAt(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "vault: decrypt")
@@ -241,14 +243,16 @@ func TestKeyringError(t *testing.T) {
 
 	_, err := vault.OpenAt(path)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "vault: get key")
+	assert.ErrorIs(t, err, vault.ErrKeyringUnavailable)
+	assert.Contains(t, err.Error(), "keyring locked")
+	assert.Contains(t, err.Error(), "unlock the keyring")
 
 	v, err := vault.OpenAt(vaultPath(t)) // missing file needs no key
 	require.NoError(t, err)
 	v.Set("k", "v")
 	err = v.Save()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "vault: get key")
+	assert.ErrorIs(t, err, vault.ErrKeyringUnavailable)
 	assert.Contains(t, err.Error(), "keyring locked")
 }
 
