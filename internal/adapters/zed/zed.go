@@ -90,20 +90,20 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 
 	for _, s := range servers {
-		cs := contextServer{Command: contextCommand{Path: s.Command, Args: s.Args}}
+		entry := contextServer{Command: contextCommand{Path: s.Command, Args: s.Args}}
 		if len(s.Env) > 0 {
-			cs.Command.Env = make(map[string]string, len(s.Env))
+			entry.Command.Env = make(map[string]string, len(s.Env))
 			for k, v := range s.Env {
-				cs.Command.Env[k] = v.Value
+				entry.Command.Env[k] = v.Value
 			}
 		}
-		enc, err := json.Marshal(cs)
+		enc, err := jsonfile.Marshal(entry, "", "")
 		if err != nil {
 			return fmt.Errorf("zed: encode server %q: %w", s.Name, err)
 		}
 		ops = append(ops, patchOp{Op: "add", Path: "/context_servers/" + pointerEscape(s.Name), Value: enc})
 	}
-	patch, err := json.Marshal(ops)
+	patch, err := jsonfile.Marshal(ops, "", "")
 	if err != nil {
 		return fmt.Errorf("zed: encode patch: %w", err)
 	}
@@ -190,11 +190,13 @@ func layout(v *hujson.Value, servers []schema.Server, before map[string]json.Raw
 		}
 		std := m.Value.Clone()
 		std.Standardize()
-		pretty, err := json.MarshalIndent(json.RawMessage(std.Pack()), csIndent, unit)
-		if err != nil {
+		// json.Indent only re-indents; unlike MarshalIndent it does not
+		// escape &, < and >.
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, std.Pack(), csIndent, unit); err != nil {
 			return fmt.Errorf("format server %q: %w", name, err)
 		}
-		pv, err := hujson.Parse(pretty)
+		pv, err := hujson.Parse(pretty.Bytes())
 		if err != nil {
 			return fmt.Errorf("format server %q: %w", name, err)
 		}

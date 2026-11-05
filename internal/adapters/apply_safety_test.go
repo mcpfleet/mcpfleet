@@ -186,3 +186,21 @@ func TestApply_NoBackupWhenFileMissing(t *testing.T) {
 		}
 	})
 }
+
+func TestApply_DoesNotEscapeHTMLCharacters(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		writeConfig(t, path, `{"note":"a<b>&c","`+key+`":{"old":{"url":"https://x/?a=1&b=2"}}}`, 0o644)
+
+		srv := []schema.Server{{Name: "new-srv", Command: "run", Args: []string{"--q=a&b<c>"}}}
+		if err := a.Apply(srv); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		out, _ := os.ReadFile(path)
+		for _, want := range []string{`a<b>&c`, `https://x/?a=1&b=2`, `--q=a&b<c>`} {
+			if !bytes.Contains(out, []byte(want)) {
+				t.Errorf("%q not written literally:\n%s", want, out)
+			}
+		}
+	})
+}

@@ -46,23 +46,41 @@ func UpsertEntries(path, key string, entries map[string]any, newMode fs.FileMode
 	}
 
 	for name, entry := range entries {
-		enc, err := json.Marshal(entry)
+		enc, err := Marshal(entry, "", "")
 		if err != nil {
 			return fmt.Errorf("encode entry %q: %w", name, err)
 		}
 		section[name] = enc
 	}
-	encSection, err := json.Marshal(section)
+	encSection, err := Marshal(section, "", "")
 	if err != nil {
 		return fmt.Errorf("encode %q: %w", key, err)
 	}
 	root[key] = encSection
 
-	out, err := json.MarshalIndent(root, "", "  ")
+	out, err := Marshal(root, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", path, err)
 	}
-	return WriteFile(path, append(out, '\n'), prev, newMode)
+	return WriteFile(path, out, prev, newMode)
+}
+
+// Marshal encodes v like json.MarshalIndent, but leaves &, < and > as they
+// are (config files are not HTML) and ends indented output with a newline.
+// Embedded json.RawMessage values are compacted without escaping too.
+func Marshal(v any, prefix, indent string) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent(prefix, indent)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	out := buf.Bytes()
+	if indent == "" && prefix == "" {
+		out = bytes.TrimSuffix(out, []byte("\n"))
+	}
+	return out, nil
 }
 
 // Read returns the content of path, or nil when the file does not exist.
