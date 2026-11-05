@@ -42,11 +42,15 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
-      - Merge pull request
-      - Merge branch
+      # Start-of-work commits (empty, opened when work on an issue starts).
+      - '^Rozpoczęcie prac nad [A-Z]+-\d+'
+      - '^[A-Z]+-\d+: start work$'
+      # Test- or CI-only commits, in the repo's "NER-123: ..." style and in
+      # conventional-commit style (older history).
+      - '^[A-Z]+-\d+: (test|ci)\b'
+      - '^(docs|test|ci)(\(.+\))?!?:'
+      - '^Merge pull request'
+      - '^Merge branch'
 
 release:
   github:
