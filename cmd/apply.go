@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -28,6 +29,10 @@ Supported agents: ` + strings.Join(adapters.Names(), ", ") + `
 claude-code writes to Claude Code's user config (~/.claude.json, or
 $CLAUDE_CONFIG_DIR/.claude.json); claude-desktop writes to the Claude Desktop
 app's claude_desktop_config.json.
+
+Env entries that reference a secret ({secret: name}) are filled from the local
+vault. Store them first with "mcpfleet secret set <name>"; a missing secret
+stops apply before any config file is written.
 
 Examples:
   mcpfleet apply cursor
@@ -61,14 +66,11 @@ Examples:
 				servers = filterByTags(servers, tags)
 			}
 
-			// 4. Resolve secrets from vault.
-			v, err := vault.Open()
+			// 4. Resolve secrets from vault. Any failure stops here, before
+			// the agent config is touched.
+			servers, err = resolveSecrets(servers, openVault)
 			if err != nil {
-				log.Warn("Could not open vault, secrets will not be resolved", "err", err)
-			} else {
-				for i := range servers {
-					servers[i].Env = resolveEnv(v, servers[i].Env)
-				}
+				return err
 			}
 
 			// 5. Write config via agent adapter.
@@ -84,22 +86,72 @@ Examples:
 	return cmd
 }
 
-// resolveEnv substitutes vault secrets into an EnvVar map.
-func resolveEnv(v *vault.Vault, env map[string]schema.EnvVar) map[string]schema.EnvVar {
-	if len(env) == 0 {
-		return env
-	}
-	out := make(map[string]schema.EnvVar, len(env))
-	for k, ev := range env {
-		val := ev.Value
-		if ev.Secret != "" {
-			if secret, ok := v.Get(ev.Secret); ok {
-				val = secret
+// secretStore is the read side of the vault that apply needs.
+type secretStore interface {
+	Get(name string) (string, bool)
+}
+
+func openVault() (secretStore, error) { return vault.Open() }
+
+// resolveSecrets returns a copy of servers with every env secret reference
+// replaced by its value from the vault. The vault is opened only when some
+// server references a secret. A vault that cannot be opened, or any secret
+// missing from it, is an error naming the affected secrets; nothing is
+// resolved partially.
+func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) ([]schema.Server, error) {
+	var refs []string // "name (server s, env X)", in server order, env keys sorted
+	for _, s := range servers {
+		for _, k := range sortedKeys(s.Env) {
+			if ref := s.Env[k].Secret; ref != "" {
+				refs = append(refs, fmt.Sprintf("%s (server %s, env %s)", ref, s.Name, k))
 			}
 		}
-		out[k] = schema.EnvVar{Value: val}
 	}
-	return out
+	if len(refs) == 0 {
+		return servers, nil
+	}
+
+	store, err := open()
+	if err != nil {
+		return nil, fmt.Errorf("cannot read secrets %s from the vault: %w", strings.Join(refs, ", "), err)
+	}
+
+	out := make([]schema.Server, len(servers))
+	var missing []string
+	for i, s := range servers {
+		out[i] = s
+		if len(s.Env) == 0 {
+			continue
+		}
+		env := make(map[string]schema.EnvVar, len(s.Env))
+		for _, k := range sortedKeys(s.Env) {
+			ev := s.Env[k]
+			if ev.Secret == "" {
+				env[k] = schema.EnvVar{Value: ev.Value}
+				continue
+			}
+			val, ok := store.Get(ev.Secret)
+			if !ok {
+				missing = append(missing, fmt.Sprintf("%s (server %s, env %s)", ev.Secret, s.Name, k))
+				continue
+			}
+			env[k] = schema.EnvVar{Value: val}
+		}
+		out[i].Env = env
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing secrets in vault: %s; set them with: mcpfleet secret set <name>", strings.Join(missing, ", "))
+	}
+	return out, nil
+}
+
+func sortedKeys(env map[string]schema.EnvVar) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // filterByTags returns servers that have at least one of the requested tags.
