@@ -166,7 +166,7 @@ func layout(v *hujson.Value, servers []schema.Server, before map[string]json.Raw
 		csMember.Value.BeforeExtra = hujson.Extra(" ")
 		csObj.AfterExtra = hujson.Extra("\n" + rootIndent)
 		if !bytes.Contains(root.AfterExtra, []byte("\n")) {
-			root.AfterExtra = append(root.AfterExtra, '\n')
+			root.AfterExtra = append(append(hujson.Extra(nil), root.AfterExtra...), '\n')
 		}
 	}
 
@@ -230,7 +230,8 @@ func memberIndent(obj *hujson.Object, keep func(name string) bool) (string, bool
 // onNewLine keeps any comments in extra and makes it end with a line break
 // followed by indent.
 func onNewLine(extra hujson.Extra, indent string) hujson.Extra {
-	out := bytes.TrimRight(extra, " \t")
+	// Copy: extra may share its backing array with neighbouring nodes.
+	out := append(hujson.Extra(nil), bytes.TrimRight(extra, " \t")...)
 	if !bytes.HasSuffix(out, []byte("\n")) {
 		out = append(out, '\n')
 	}
