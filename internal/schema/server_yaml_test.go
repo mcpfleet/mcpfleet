@@ -80,7 +80,21 @@ func TestServer_YAMLKeysAndOmitEmpty(t *testing.T) {
 		"transport": "stdio",
 		"install":   map[string]any{"type": "binary", "package": "min"},
 		"command":   "min",
-	}, got, "required keys only; description/args/env/tags/platforms/install.version omitted:\n%s", out)
+	}, got, "required keys only; description/url/args/env/tags/platforms/install.version omitted:\n%s", out)
+}
+
+func TestServer_YAMLURLRoundTrip(t *testing.T) {
+	in := Server{Name: "remote", Transport: "sse", URL: "https://example.com/sse"}
+	out, err := yaml.Marshal(in)
+	require.NoError(t, err)
+
+	var keys map[string]any
+	require.NoError(t, yaml.Unmarshal(out, &keys))
+	assert.Equal(t, "https://example.com/sse", keys["url"], "url key:\n%s", out)
+
+	var back Server
+	require.NoError(t, yaml.Unmarshal(out, &back))
+	assert.Equal(t, in, back)
 }
 
 func TestEnvVar_YAMLOmitEmpty(t *testing.T) {

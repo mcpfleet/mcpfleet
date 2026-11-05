@@ -33,7 +33,7 @@ func TestServer_JSONKeys(t *testing.T) {
 			t.Errorf("missing key %q in %s", k, b)
 		}
 	}
-	for _, k := range []string{"Name", "description", "args", "tags", "platforms"} {
+	for _, k := range []string{"Name", "description", "url", "URL", "args", "tags", "platforms"} {
 		if _, ok := got[k]; ok {
 			t.Errorf("unexpected key %q in %s", k, b)
 		}
@@ -53,6 +53,21 @@ func TestServer_JSONKeys(t *testing.T) {
 	lvl, _ := env["LOG_LEVEL"].(map[string]any)
 	if lvl["value"] != "debug" || len(lvl) != 1 {
 		t.Errorf("env.LOG_LEVEL = %v, want {value: debug}", env["LOG_LEVEL"])
+	}
+}
+
+// TestServer_JSONURL pins the key of the remote (http/sse) server address.
+func TestServer_JSONURL(t *testing.T) {
+	b, err := json.Marshal(Server{Name: "remote", Transport: "http", URL: "https://example.com/mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["url"] != "https://example.com/mcp" {
+		t.Errorf("url = %v, want https://example.com/mcp in %s", got["url"], b)
 	}
 }
 
