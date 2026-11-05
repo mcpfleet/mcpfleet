@@ -126,20 +126,29 @@ func newAuthLogoutCmd() *cobra.Command {
 func newAuthStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show current auth status",
+		Short: "Show current auth status and the registry URL in use",
+		Long: `Show whether a token is saved and which registry later commands talk to.
+
+The registry URL comes from MCPFLEET_REGISTRY_URL, else from the URL saved by
+"mcpfleet auth login" (~/.config/mcpfleet/registry_url), else the default.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := registry.LoadToken()
-			if err != nil {
-				fmt.Println("Not logged in.")
-				return nil
+			out := cmd.OutOrStdout()
+			if token, err := registry.LoadToken(); err != nil {
+				fmt.Fprintln(out, "Not logged in.")
+			} else {
+				fmt.Fprintf(out, "✓ Logged in (token: %s)\n", maskToken(token))
 			}
-			// Show a masked version of the token.
-			masked := token
-			if len(token) > 8 {
-				masked = token[:4] + strings.Repeat("*", len(token)-8) + token[len(token)-4:]
-			}
-			fmt.Printf("✓ Logged in (token: %s)\n", masked)
+			u, src := registry.BaseURL()
+			fmt.Fprintf(out, "Registry: %s (from %s)\n", u, src)
 			return nil
 		},
 	}
+}
+
+// maskToken keeps the first and last four characters of a token.
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return token
+	}
+	return token[:4] + strings.Repeat("*", len(token)-8) + token[len(token)-4:]
 }
