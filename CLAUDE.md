@@ -21,7 +21,7 @@ Commits use `<ISSUE-ID>: <summary>` (e.g. `NER-123: add zed adapter`). The relea
 
 - a commit that only adds or changes tests starts with `<ISSUE-ID>: test …` (e.g. `NER-123: test zed adapter merge`);
 - a commit that only changes CI starts with `<ISSUE-ID>: ci: …`;
-- every other commit describes the user-visible change and must not start with `test` or `ci`, or it disappears from the changelog.
+- every other commit describes the user-visible change and must not start with the word `test` or `ci` (`NER-123: tests …` is kept, `NER-123: test-only flag` is dropped), or it disappears from the changelog.
 
 Start-of-work commits (`Rozpoczęcie prac nad <ISSUE-ID>`) and merge commits are dropped as well.
 
