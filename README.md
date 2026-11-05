@@ -46,6 +46,8 @@ new machine setup:
 brew install mcpfleet/tap/mcpfleet
 ```
 
+The formula is a Homebrew cask in the [`mcpfleet/homebrew-tap`](https://github.com/mcpfleet/homebrew-tap) repository, updated on every release. The binaries are not signed or notarized yet; on macOS the cask removes the quarantine attribute so Gatekeeper does not block `mcpfleet`.
+
 ### curl (Linux / macOS)
 
 ```bash
@@ -60,7 +62,23 @@ go install github.com/mcpfleet/mcpfleet/cmd/mcpfleet@latest
 
 ### Download binary
 
-Grab the latest binary from [GitHub Releases](https://github.com/mcpfleet/mcpfleet/releases).
+Every [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases) has archives for Linux, macOS and Windows on amd64 and arm64 (`mcpfleet_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) plus `checksums.txt`. Download the one for your platform, check it and put the binary on your `PATH`:
+
+```bash
+VERSION=0.1.0
+curl -fsSLO "https://github.com/mcpfleet/mcpfleet/releases/download/v${VERSION}/mcpfleet_${VERSION}_linux_amd64.tar.gz"
+curl -fsSLO "https://github.com/mcpfleet/mcpfleet/releases/download/v${VERSION}/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt
+tar -xzf "mcpfleet_${VERSION}_linux_amd64.tar.gz" mcpfleet
+sudo install mcpfleet /usr/local/bin/
+```
+
+### Check the installation
+
+```bash
+mcpfleet --version
+# mcpfleet version 0.1.0 (commit <sha>, built <date>)
+```
 
 ## Quick start
 

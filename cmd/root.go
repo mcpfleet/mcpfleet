@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/charmbracelet/log"
@@ -25,8 +26,10 @@ Examples:
 	},
 }
 
-func Execute() error {
-	return rootCmd.Execute()
+// SetVersionInfo sets the build information printed by "mcpfleet --version".
+// main passes the values injected by GoReleaser through -ldflags.
+func SetVersionInfo(version, commit, date string) {
+	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
 }
 
 func init() {
