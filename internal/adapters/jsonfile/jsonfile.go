@@ -1,0 +1,172 @@
+// Package jsonfile updates agent config files without destroying the parts
+// mcpfleet does not own: unknown keys and unrelated server entries are kept,
+// unparsable files are never overwritten, the previous content is saved to
+// <file>.bak and the new content is written atomically.
+package jsonfile
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// UpsertEntries sets entries[name] under the top-level object key of the
+// JSON file at path, leaving every other key and every other entry intact.
+//
+// A missing file, an empty file, or a missing/null key count as empty. A file
+// that is not valid JSON, whose root is not an object, or whose key is not an
+// object yields an error and the file is left untouched. newMode is the
+// permission used when the file does not exist yet; an existing file keeps
+// its mode.
+func UpsertEntries(path, key string, entries map[string]any, newMode fs.FileMode) error {
+	prev, err := Read(path)
+	if err != nil {
+		return err
+	}
+
+	root := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(prev)) > 0 {
+		if err := json.Unmarshal(prev, &root); err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		if root == nil { // literal null
+			return fmt.Errorf("parse %s: root is not a JSON object", path)
+		}
+	}
+
+	section := map[string]json.RawMessage{}
+	if rawSection, ok := root[key]; ok && !isNull(rawSection) {
+		if err := json.Unmarshal(rawSection, &section); err != nil {
+			return fmt.Errorf("parse %s: %q is not a JSON object: %w", path, key, err)
+		}
+	}
+
+	for name, entry := range entries {
+		enc, err := json.Marshal(entry)
+		if err != nil {
+			return fmt.Errorf("encode entry %q: %w", name, err)
+		}
+		section[name] = enc
+	}
+	encSection, err := json.Marshal(section)
+	if err != nil {
+		return fmt.Errorf("encode %q: %w", key, err)
+	}
+	root[key] = encSection
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", path, err)
+	}
+	return WriteFile(path, append(out, '\n'), prev, newMode)
+}
+
+// Read returns the content of path, or nil when the file does not exist.
+// An existing empty file yields a non-nil empty slice, so callers can tell
+// the two apart when passing the result to WriteFile as prev.
+func Read(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	return data, nil
+}
+
+// WriteFile replaces the file at path with data.
+//
+// prev is the content the caller read earlier (nil when the file did not
+// exist). If the file no longer matches prev, WriteFile fails instead of
+// discarding a concurrent change. A symlink at path is followed, so the link
+// itself is kept. An existing file is first copied to <file>.bak with its
+// mode, and keeps that mode; a new file gets newMode. The write goes to a
+// temporary file in the same directory that is then renamed over the target.
+func WriteFile(path string, data, prev []byte, newMode fs.FileMode) error {
+	target, err := resolve(path)
+	if err != nil {
+		return err
+	}
+
+	mode := newMode
+	cur, err := Read(target)
+	if err != nil {
+		return err
+	}
+	switch {
+	case prev == nil && cur != nil:
+		return fmt.Errorf("%s changed during apply (file appeared); re-run apply", path)
+	case prev != nil && (cur == nil || !bytes.Equal(cur, prev)):
+		return fmt.Errorf("%s changed during apply; re-run apply", path)
+	}
+
+	if cur != nil {
+		st, err := os.Stat(target)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", target, err)
+		}
+		mode = st.Mode().Perm()
+		if err := atomicWrite(target+".bak", cur, mode); err != nil {
+			return fmt.Errorf("write backup: %w", err)
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	return atomicWrite(target, data, mode)
+}
+
+// resolve follows symlinks at path. A path that does not exist yet is
+// returned unchanged.
+func resolve(path string) (string, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return real, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return "", fmt.Errorf("%s is a symlink to a missing file", path)
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf("resolve %s: %w", path, err)
+}
+
+func atomicWrite(path string, data []byte, mode fs.FileMode) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err = tmp.Write(data); err != nil {
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if err = os.Chmod(tmp.Name(), mode); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func isNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
