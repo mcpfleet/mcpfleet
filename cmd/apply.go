@@ -19,7 +19,7 @@ func newApplyCmd() *cobra.Command {
 	var tags []string
 
 	cmd := &cobra.Command{
-		Use:   "apply [agent]",
+		Use:   "apply <agent>",
 		Short: "Apply MCP server definitions to an agent",
 		Long: `Apply MCP server definitions from your registry to a specific AI coding agent.
 
