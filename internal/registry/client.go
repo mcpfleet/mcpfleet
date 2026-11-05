@@ -81,6 +81,29 @@ func readDetail(r io.Reader) string {
 	return p.Detail
 }
 
+// URLSource names where the effective registry URL came from.
+type URLSource string
+
+// Sources of the registry URL, in order of precedence.
+const (
+	SourceEnv     URLSource = "MCPFLEET_REGISTRY_URL"
+	SourceFile    URLSource = "~/.config/mcpfleet/registry_url"
+	SourceDefault URLSource = "default"
+)
+
+// BaseURL returns the effective registry URL, without trailing slashes, and
+// its source: MCPFLEET_REGISTRY_URL, then the URL saved by "auth login",
+// then the default.
+func BaseURL() (string, URLSource) {
+	if u := os.Getenv("MCPFLEET_REGISTRY_URL"); u != "" {
+		return strings.TrimRight(u, "/"), SourceEnv
+	}
+	if u, _ := LoadRegistryURL(); u != "" {
+		return strings.TrimRight(u, "/"), SourceFile
+	}
+	return defaultBaseURL, SourceDefault
+}
+
 // Client talks to the mcpfleet registry API.
 type Client struct {
 	baseURL    string
@@ -94,14 +117,7 @@ func New() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry: not authenticated — run 'mcpfleet auth login' first")
 	}
-	baseURL := os.Getenv("MCPFLEET_REGISTRY_URL")
-	if baseURL == "" {
-		baseURL, _ = LoadRegistryURL()
-	}
-	if baseURL == "" {
-		baseURL = defaultBaseURL
-	}
-	baseURL = strings.TrimRight(baseURL, "/")
+	baseURL, _ := BaseURL()
 	return &Client{
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
