@@ -132,3 +132,45 @@ func TestApply_MissingSecretFailsWithoutWrite(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(home, ".cursor", "mcp.json"))
 	assert.True(t, errors.Is(statErr, os.ErrNotExist), "agent config must not be written: %v", statErr)
 }
+
+// loginToFakeRegistry starts a registry that serves servers on GET
+// /v1/servers, isolates HOME and logs in to it.
+func loginToFakeRegistry(t *testing.T, servers []schema.Server) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("MCPFLEET_REGISTRY_URL", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/servers" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(servers)
+	}))
+	t.Cleanup(srv.Close)
+	_, _, err := runRootIO(t, nil, "auth", "login", "--url", srv.URL, "--token", "tok")
+	require.NoError(t, err)
+	return home
+}
+
+func TestApply_VerbosePrintsDebugLogs(t *testing.T) {
+	loginToFakeRegistry(t, []schema.Server{{Name: "fs", Command: "npx"}})
+
+	out, errOut, err := runRootIO(t, nil, "apply", "-v", "cursor")
+	require.NoError(t, err)
+	assert.Contains(t, errOut, "Applying MCP servers")
+	assert.Contains(t, out, "Applied 1 MCP server(s) to cursor")
+}
+
+func TestApply_NoLogsWithoutVerbose(t *testing.T) {
+	loginToFakeRegistry(t, []schema.Server{{Name: "fs", Command: "npx"}})
+
+	out, errOut, err := runRootIO(t, nil, "apply", "cursor")
+	require.NoError(t, err)
+	assert.Empty(t, errOut)
+	assert.Contains(t, out, "Applied 1 MCP server(s) to cursor")
+}

@@ -43,7 +43,7 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentName := args[0]
-			log.Info("Applying MCP servers", "agent", agentName, "all", applyAll, "tags", tags)
+			log.Debug("Applying MCP servers", "agent", agentName, "tags", tags)
 
 			// 1. Resolve adapter.
 			adapter, err := adapters.Get(agentName)
@@ -60,10 +60,12 @@ Examples:
 			if err != nil {
 				return err
 			}
+			log.Debug("Fetched servers from registry", "count", len(servers))
 
 			// 3. Filter by tags if provided.
 			if len(tags) > 0 {
 				servers = filterByTags(servers, tags)
+				log.Debug("Filtered servers by tag", "count", len(servers))
 			}
 
 			// 4. Resolve secrets from vault. Any failure stops here, before
@@ -74,10 +76,11 @@ Examples:
 			}
 
 			// 5. Write config via agent adapter.
+			log.Debug("Writing agent config", "path", adapter.ConfigPath())
 			if err := adapter.Apply(servers); err != nil {
 				return fmt.Errorf("apply: %w", err)
 			}
-			fmt.Printf("\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
+			fmt.Fprintf(cmd.OutOrStdout(), "\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
 			return nil
 		},
 	}
