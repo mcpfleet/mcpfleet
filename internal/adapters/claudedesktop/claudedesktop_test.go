@@ -18,6 +18,7 @@ func isolate(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("APPDATA", filepath.Join(home, "AppData"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	return home
 }
 
@@ -34,7 +35,7 @@ func TestConfigPath_ClaudeDesktopConfig(t *testing.T) {
 	case "darwin":
 		want = filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
 	default:
-		want = filepath.Join(home, ".claude", "claude_desktop_config.json")
+		want = filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	}
 	assert.Equal(t, want, New().ConfigPath())
 }
