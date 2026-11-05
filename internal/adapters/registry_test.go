@@ -1,14 +1,17 @@
 package adapters_test
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters"
 )
 
+var knownAgents = []string{"claude-code", "claude-desktop", "crush", "cursor", "windsurf", "zed"}
+
 func TestGet_KnownAgents(t *testing.T) {
-	known := []string{"cursor", "claude-code", "windsurf", "zed", "crush"}
-	for _, name := range known {
+	for _, name := range knownAgents {
 		t.Run(name, func(t *testing.T) {
 			a, err := adapters.Get(name)
 			if err != nil {
@@ -32,40 +35,30 @@ func TestGet_UnknownAgent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown agent, got nil")
 	}
+	want := "supported: " + strings.Join(knownAgents, ", ")
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not list agents as %q", err, want)
+	}
 }
 
 func TestAll_ReturnsAllAdapters(t *testing.T) {
 	all := adapters.All()
-	if len(all) == 0 {
-		t.Fatal("All() returned empty slice")
+	if len(all) != len(knownAgents) {
+		t.Fatalf("All() returned %d adapters, want %d", len(all), len(knownAgents))
 	}
-	expectedCount := 5
-	if len(all) != expectedCount {
-		t.Errorf("All() returned %d adapters, want %d", len(all), expectedCount)
-	}
-	for _, a := range all {
-		if a.Name() == "" {
-			t.Error("adapter with empty name found")
+	for i, a := range all {
+		if a.Name() != knownAgents[i] {
+			t.Errorf("All()[%d].Name() = %q, want %q (sorted by name)", i, a.Name(), knownAgents[i])
 		}
 	}
 }
 
-func TestNames_ContainsAllAgents(t *testing.T) {
+func TestNames_SortedAndComplete(t *testing.T) {
 	names := adapters.Names()
-	expected := map[string]bool{
-		"cursor":     true,
-		"claude-code": true,
-		"windsurf":   true,
-		"zed":        true,
-		"crush":      true,
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("Names() not sorted: %v", names)
 	}
-	for _, n := range names {
-		if !expected[n] {
-			t.Errorf("unexpected agent name: %q", n)
-		}
-		delete(expected, n)
-	}
-	for missing := range expected {
-		t.Errorf("missing agent name: %q", missing)
+	if strings.Join(names, ",") != strings.Join(knownAgents, ",") {
+		t.Errorf("Names() = %v, want %v", names, knownAgents)
 	}
 }

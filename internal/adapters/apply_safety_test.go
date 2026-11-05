@@ -14,11 +14,12 @@ import (
 
 // serversKey maps each adapter to the top-level key holding its MCP servers.
 var serversKey = map[string]string{
-	"cursor":      "mcpServers",
-	"claude-code": "mcpServers",
-	"windsurf":    "mcpServers",
-	"crush":       "mcpServers",
-	"zed":         "context_servers",
+	"cursor":         "mcpServers",
+	"claude-code":    "mcpServers",
+	"claude-desktop": "mcpServers",
+	"windsurf":       "mcpServers",
+	"crush":          "mcpServers",
+	"zed":            "context_servers",
 }
 
 // isolate points every config location at a fresh temp dir.
