@@ -11,7 +11,7 @@ import (
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
-// windsurfSettings mirrors ~/.codeium/windsurf/mcp_config.json
+// windsurfSettings mirrors <home>/.codeium/windsurf/mcp_config.json
 type windsurfSettings struct {
 	McpServers map[string]mcpEntry `json:"mcpServers"`
 }
@@ -31,12 +31,16 @@ func (a *Adapter) Name() string { return "windsurf" }
 
 func (a *Adapter) ConfigPath() string {
 	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(os.Getenv("APPDATA"), "Windsurf", "mcp_config.json")
-	default:
-		return filepath.Join(home, ".codeium", "windsurf", "mcp_config.json")
-	}
+	return configPath(runtime.GOOS, home, os.Getenv)
+}
+
+// configPath returns Windsurf's MCP config file for the given OS, home
+// directory and environment. Windsurf keeps it under the home directory on
+// every OS (%USERPROFILE%\.codeium\windsurf on Windows, not %APPDATA%), so
+// goos and getenv do not change the result; they are parameters so the
+// per-OS layout is pinned by a test on any runner.
+func configPath(goos, home string, getenv func(string) string) string {
+	return filepath.Join(home, ".codeium", "windsurf", "mcp_config.json")
 }
 
 func (a *Adapter) Apply(servers []schema.Server) error {
