@@ -18,7 +18,7 @@ Examples:
   mcpfleet auth login
   mcpfleet list
   mcpfleet secret set github_token
-  mcpfleet apply --all cursor
+  mcpfleet apply cursor
   mcpfleet apply --tag dev claude-code`,
 	// Every command logs to its own stderr stream, so logs follow
 	// cmd.Run's writers instead of the process's os.Stderr, at debug level

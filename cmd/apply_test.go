@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -173,4 +174,19 @@ func TestApply_NoLogsWithoutVerbose(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, errOut)
 	assert.Contains(t, out, "Applied 1 MCP server(s) to cursor")
+}
+
+func TestApply_AllFlagIsUnknown(t *testing.T) {
+	isolateConfig(t)
+	var stdout, stderr bytes.Buffer
+	code := runForTest(t, []string{"apply", "--all", "cursor"}, &stdout, &stderr)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr.String(), "Error: unknown flag: --all")
+}
+
+func TestApplyHelp_HasNoAllFlag(t *testing.T) {
+	out, _, err := runRootIO(t, nil, "apply", "--help")
+	require.NoError(t, err)
+	assert.Contains(t, out, "--tag")
+	assert.NotContains(t, out, "--all")
 }

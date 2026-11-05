@@ -16,7 +16,6 @@ import (
 )
 
 func newApplyCmd() *cobra.Command {
-	var applyAll bool
 	var tags []string
 
 	cmd := &cobra.Command{
@@ -36,7 +35,6 @@ stops apply before any config file is written.
 
 Examples:
   mcpfleet apply cursor
-  mcpfleet apply --all cursor
   mcpfleet apply --tag dev cursor
   mcpfleet apply --tag dev --tag vcs claude-code
   mcpfleet apply claude-desktop`,
@@ -84,7 +82,6 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&applyAll, "all", false, "Apply all servers from registry")
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Filter servers by tag (can be used multiple times)")
 	return cmd
 }
