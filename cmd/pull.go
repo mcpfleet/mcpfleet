@@ -11,7 +11,7 @@ import (
 
 // pullCmd fetches all server definitions from the registry and writes them to a YAML file.
 var pullCmd = &cobra.Command{
-	Use:   "pull [file]",
+	Use:   "pull <file>",
 	Short: "Pull server definitions from the mcpfleet registry",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runPull,

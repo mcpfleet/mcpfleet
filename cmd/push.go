@@ -13,7 +13,7 @@ import (
 
 func newPushCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "push [file]",
+		Use:   "push <file>",
 		Short: "Push server definitions to the mcpfleet registry",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runPush,

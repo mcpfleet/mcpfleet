@@ -82,15 +82,40 @@ mcpfleet --version
 
 ## Quick start
 
+Describe your MCP servers in a YAML file. The file is a list of server definitions; only `name` is required:
+
+```yaml
+# servers.yaml
+- name: filesystem
+  transport: stdio
+  install:
+    type: npx
+    package: "@modelcontextprotocol/server-filesystem"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/me/projects"]
+  tags: [dev]
+
+- name: github
+  transport: stdio
+  install:
+    type: npx
+    package: "@modelcontextprotocol/server-github"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-github"]
+  env:
+    GITHUB_TOKEN:
+      secret: github_token
+  tags: [dev, vcs]
+```
+
+`env` maps each variable to either a `value` (a literal) or a `secret` (the name of a secret in your local vault, filled in when you apply).
+
 ```bash
 # 1. Authenticate with the registry
 mcpfleet auth login
 
-# 2. Push an MCP server definition
-mcpfleet push my-server \
-  --command npx \
-  --args "-y,@modelcontextprotocol/server-filesystem" \
-  --tag dev
+# 2. Push the server definitions (creates new servers, updates existing ones)
+mcpfleet push servers.yaml
 
 # 3. Store the secrets your servers reference (env: GITHUB_TOKEN: {secret: github_token})
 mcpfleet secret set github_token
@@ -104,8 +129,11 @@ mcpfleet apply --tag dev claude-code
 # 6. List all servers in the registry
 mcpfleet list
 
-# 7. Remove a server
-mcpfleet delete my-server
+# 7. Save every server from the registry to a YAML file (same format as servers.yaml)
+mcpfleet pull backup.yaml
+
+# 8. Remove a server
+mcpfleet delete filesystem
 ```
 
 `secret set` asks for the value with a hidden prompt; it never takes the value as an argument. In scripts, pipe it in with `--stdin` (one trailing newline is dropped):
@@ -153,9 +181,10 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 ```
 mcpfleet auth login          Authenticate with the registry
 mcpfleet auth status         Show whether you are logged in and the registry URL in use
+mcpfleet auth logout         Remove the stored token
 mcpfleet list                List all MCP servers in the registry
-mcpfleet push <name>         Add or update an MCP server definition
-mcpfleet pull                Pull latest server definitions from registry
+mcpfleet push <file>         Add or update the server definitions from a YAML file
+mcpfleet pull <file>         Write every server definition from the registry to a YAML file
 mcpfleet apply <agent>       Apply registry servers to an agent config
   --tag <tag>                  Apply only servers with the given tag (default: all servers)
 mcpfleet delete <name>       Remove an MCP server from the registry
