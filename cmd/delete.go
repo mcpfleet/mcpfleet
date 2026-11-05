@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/mcpfleet/mcpfleet/internal/registry"
@@ -22,10 +23,13 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			if err := client.DeleteServer(cmd.Context(), name); err != nil {
+				if errors.Is(err, registry.ErrNotFound) {
+					return fmt.Errorf("server %q not found in registry", name)
+				}
 				return fmt.Errorf("delete server %q: %w", name, err)
 			}
 
-			fmt.Printf("Server %q removed from registry.\n", name)
+			fmt.Fprintf(cmd.OutOrStdout(), "Server %q removed from registry.\n", name)
 			return nil
 		},
 	}

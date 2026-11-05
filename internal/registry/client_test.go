@@ -188,6 +188,33 @@ func TestErrorStatuses(t *testing.T) {
 	}
 }
 
+func TestErrorStatuses_IsAndDetail(t *testing.T) {
+	cases := []struct {
+		status   int
+		body     string
+		sentinel error
+		want     string
+	}{
+		{http.StatusNotFound, `{"detail":"server not found"}`, ErrNotFound, "registry: not found: server not found"},
+		{http.StatusConflict, `{"detail":"server name \"x\" is already taken"}`, ErrConflict, `registry: conflict: server name "x" is already taken`},
+		{http.StatusNotFound, "", ErrNotFound, "registry: not found"},
+	}
+	for _, tc := range cases {
+		t.Run(http.StatusText(tc.status)+" "+tc.body, func(t *testing.T) {
+			c := newTestClient(t, &recorder{status: tc.status, body: tc.body})
+
+			err := c.DeleteServer(context.Background(), "x")
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tc.sentinel)
+			assert.EqualError(t, err, tc.want)
+
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, tc.status, apiErr.StatusCode)
+		})
+	}
+}
+
 func TestInvalidJSONResponse(t *testing.T) {
 	c := newTestClient(t, &recorder{body: `{"name":`})
 	_, err := c.GetServer(context.Background(), "abc")

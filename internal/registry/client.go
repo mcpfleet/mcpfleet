@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +23,63 @@ const (
 	tokenFile       = "token"
 	registryURLFile = "registry_url"
 )
+
+// Sentinel errors matched by APIError through errors.Is.
+var (
+	// ErrNotFound matches a 404 response: the server does not exist.
+	ErrNotFound = errors.New("registry: not found")
+	// ErrConflict matches a 409 response, e.g. a server name already taken.
+	ErrConflict = errors.New("registry: conflict")
+)
+
+// maxErrorBody caps how much of an error response body is read for detail.
+const maxErrorBody = 64 << 10
+
+// APIError is a non-2xx response from the registry (other than 401).
+// Detail is the "detail" field of the application/problem+json body, if any.
+type APIError struct {
+	StatusCode int
+	Detail     string
+}
+
+func (e *APIError) Error() string {
+	var msg string
+	switch e.StatusCode {
+	case http.StatusNotFound:
+		msg = ErrNotFound.Error()
+	case http.StatusConflict:
+		msg = ErrConflict.Error()
+	default:
+		msg = fmt.Sprintf("registry: unexpected status %d", e.StatusCode)
+	}
+	if e.Detail != "" {
+		msg += ": " + e.Detail
+	}
+	return msg
+}
+
+// Is lets errors.Is match ErrNotFound and ErrConflict by status code.
+func (e *APIError) Is(target error) bool {
+	switch target {
+	case ErrNotFound:
+		return e.StatusCode == http.StatusNotFound
+	case ErrConflict:
+		return e.StatusCode == http.StatusConflict
+	}
+	return false
+}
+
+// readDetail returns the "detail" field of a problem+json error body, or ""
+// when the body is empty or not JSON.
+func readDetail(r io.Reader) string {
+	var p struct {
+		Detail string `json:"detail"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r, maxErrorBody)).Decode(&p); err != nil {
+		return ""
+	}
+	return p.Detail
+}
 
 // Client talks to the mcpfleet registry API.
 type Client struct {
@@ -79,11 +138,8 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	if resp.StatusCode == http.StatusUnauthorized {
 		return resp, fmt.Errorf("registry: token invalid or expired — run 'mcpfleet auth login'")
 	}
-	if resp.StatusCode == http.StatusNotFound {
-		return resp, fmt.Errorf("registry: not found")
-	}
 	if resp.StatusCode >= 300 {
-		return resp, fmt.Errorf("registry: unexpected status %d", resp.StatusCode)
+		return resp, &APIError{StatusCode: resp.StatusCode, Detail: readDetail(resp.Body)}
 	}
 	if out != nil && resp.ContentLength != 0 {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
