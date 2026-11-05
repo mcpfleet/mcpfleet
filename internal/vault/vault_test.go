@@ -234,6 +234,24 @@ func TestSave_NewVaultKeyringErrorKeepsKey(t *testing.T) {
 	assert.Zero(t, fk.sets, "Save created a key although the keyring could not be read")
 }
 
+func TestSave_MissingKeyWithExistingFileIsNotRegenerated(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	v, err := vault.OpenAt(path) // no file yet: no key needed
+	require.NoError(t, err)
+	saved(t, path, map[string]string{"k": "v"}) // file appears meanwhile
+
+	keyring.MockInit() // ...and its key is gone
+	v.Set("other", "x")
+	err = v.Save()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vault.ErrKeyMissing)
+	assert.Contains(t, err.Error(), "restore the key, or move the file aside")
+
+	_, err = keyring.Get("mcpfleet", "vault-key")
+	assert.ErrorIs(t, err, keyring.ErrNotFound, "Save stored a new key")
+}
+
 func TestSave_NewVaultCreatesKey(t *testing.T) {
 	freshKeyring(t)
 	path := vaultPath(t)
