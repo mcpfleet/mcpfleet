@@ -5,20 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
-// claudeSettings mirrors the relevant part of Claude Code's config file.
-// Claude Code stores MCP servers in ~/.claude/claude_desktop_config.json
-// (same format as Claude Desktop).
+// claudeSettings mirrors the relevant part of Claude Code's user config.
+// Claude Code keeps user-scoped MCP servers under the top-level "mcpServers"
+// key of ~/.claude.json, next to the rest of its state (account, projects,
+// ...), which must be left intact.
 type claudeSettings struct {
 	McpServers map[string]mcpEntry `json:"mcpServers"`
 }
 
 type mcpEntry struct {
+	Type    string            `json:"type,omitempty"`
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
@@ -31,22 +32,21 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "claude-code" }
 
+// ConfigPath returns Claude Code's user config: $CLAUDE_CONFIG_DIR/.claude.json
+// when the variable is set, otherwise ~/.claude.json on every OS.
 func (a *Adapter) ConfigPath() string {
-	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(os.Getenv("APPDATA"), "Claude", "claude_desktop_config.json")
-	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-	default:
-		return filepath.Join(home, ".claude", "claude_desktop_config.json")
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, ".claude.json")
 	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude.json")
 }
 
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
 		entry := mcpEntry{
+			Type:    "stdio",
 			Command: s.Command,
 			Args:    s.Args,
 		}
@@ -60,7 +60,8 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries, 0o644); err != nil {
+	// A new file is created 0600 like Claude Code does: it holds account state.
+	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries, 0o600); err != nil {
 		return fmt.Errorf("claude-code: %w", err)
 	}
 	return nil
