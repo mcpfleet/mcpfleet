@@ -26,10 +26,10 @@ func isolateVault(t *testing.T) {
 	t.Cleanup(keyring.MockInit)
 }
 
-// runSecret executes the root command with stdin and returns stdout, stderr
+// runRootIO executes the root command with stdin and returns stdout, stderr
 // and the error. Flags changed by the run are reset afterwards, because the
 // global rootCmd keeps flag values between Execute calls.
-func runSecret(t *testing.T, stdin io.Reader, args ...string) (string, string, error) {
+func runRootIO(t *testing.T, stdin io.Reader, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errOut bytes.Buffer
 	rootCmd.SetIn(stdin)
@@ -69,7 +69,7 @@ func storedSecret(t *testing.T, name string) (string, bool) {
 func TestSecretSet_StdinSavesValue(t *testing.T) {
 	isolateVault(t)
 
-	out, _, err := runSecret(t, strings.NewReader("tok-123\n"), "secret", "set", "github_token", "--stdin")
+	out, _, err := runRootIO(t, strings.NewReader("tok-123\n"), "secret", "set", "github_token", "--stdin")
 	require.NoError(t, err)
 	assert.Contains(t, out, "Saved secret github_token")
 
@@ -81,7 +81,7 @@ func TestSecretSet_StdinSavesValue(t *testing.T) {
 func TestSecretSet_StdinKeepsAllButOneTrailingNewline(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader("line1\nline2\n\r\n"), "secret", "set", "k", "--stdin")
+	_, _, err := runRootIO(t, strings.NewReader("line1\nline2\n\r\n"), "secret", "set", "k", "--stdin")
 	require.NoError(t, err)
 
 	got, _ := storedSecret(t, "k")
@@ -91,9 +91,9 @@ func TestSecretSet_StdinKeepsAllButOneTrailingNewline(t *testing.T) {
 func TestSecretSet_OverwriteSaysUpdated(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader("one"), "secret", "set", "k", "--stdin")
+	_, _, err := runRootIO(t, strings.NewReader("one"), "secret", "set", "k", "--stdin")
 	require.NoError(t, err)
-	out, _, err := runSecret(t, strings.NewReader("two"), "secret", "set", "k", "--stdin")
+	out, _, err := runRootIO(t, strings.NewReader("two"), "secret", "set", "k", "--stdin")
 	require.NoError(t, err)
 	assert.Contains(t, out, "Updated secret k")
 
@@ -104,7 +104,7 @@ func TestSecretSet_OverwriteSaysUpdated(t *testing.T) {
 func TestSecretSet_ValueNeverFromArgument(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader(""), "secret", "set", "k", "the-value")
+	_, _, err := runRootIO(t, strings.NewReader(""), "secret", "set", "k", "the-value")
 	require.Error(t, err)
 
 	_, ok := storedSecret(t, "k")
@@ -114,7 +114,7 @@ func TestSecretSet_ValueNeverFromArgument(t *testing.T) {
 func TestSecretSet_RefusesWithoutTerminalOrStdinFlag(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader("piped"), "secret", "set", "k")
+	_, _, err := runRootIO(t, strings.NewReader("piped"), "secret", "set", "k")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--stdin")
 
@@ -125,7 +125,7 @@ func TestSecretSet_RefusesWithoutTerminalOrStdinFlag(t *testing.T) {
 func TestSecretSet_EmptyValueFails(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader("\n"), "secret", "set", "k", "--stdin")
+	_, _, err := runRootIO(t, strings.NewReader("\n"), "secret", "set", "k", "--stdin")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 
@@ -137,7 +137,7 @@ func TestSecretSet_InvalidNameFails(t *testing.T) {
 	isolateVault(t)
 
 	for _, name := range []string{"", " padded", "padded "} {
-		_, _, err := runSecret(t, strings.NewReader("v"), "secret", "set", name, "--stdin")
+		_, _, err := runRootIO(t, strings.NewReader("v"), "secret", "set", name, "--stdin")
 		assert.Error(t, err, "name %q", name)
 	}
 }
@@ -146,11 +146,11 @@ func TestSecretList_NamesWithoutValues(t *testing.T) {
 	isolateVault(t)
 
 	for name, val := range map[string]string{"zeta": "z-value", "alpha": "a-value"} {
-		_, _, err := runSecret(t, strings.NewReader(val), "secret", "set", name, "--stdin")
+		_, _, err := runRootIO(t, strings.NewReader(val), "secret", "set", name, "--stdin")
 		require.NoError(t, err)
 	}
 
-	out, _, err := runSecret(t, nil, "secret", "list")
+	out, _, err := runRootIO(t, nil, "secret", "list")
 	require.NoError(t, err)
 	assert.Equal(t, "alpha\nzeta\n", out)
 	assert.NotContains(t, out, "value")
@@ -159,7 +159,7 @@ func TestSecretList_NamesWithoutValues(t *testing.T) {
 func TestSecretList_EmptyVaultHintOnStderr(t *testing.T) {
 	isolateVault(t)
 
-	out, errOut, err := runSecret(t, nil, "secret", "list")
+	out, errOut, err := runRootIO(t, nil, "secret", "list")
 	require.NoError(t, err)
 	assert.Empty(t, out)
 	assert.Contains(t, errOut, "secret set")
@@ -168,12 +168,12 @@ func TestSecretList_EmptyVaultHintOnStderr(t *testing.T) {
 func TestSecretRm_DeletesSecret(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, strings.NewReader("v"), "secret", "set", "gone", "--stdin")
+	_, _, err := runRootIO(t, strings.NewReader("v"), "secret", "set", "gone", "--stdin")
 	require.NoError(t, err)
-	_, _, err = runSecret(t, strings.NewReader("v"), "secret", "set", "kept", "--stdin")
+	_, _, err = runRootIO(t, strings.NewReader("v"), "secret", "set", "kept", "--stdin")
 	require.NoError(t, err)
 
-	out, _, err := runSecret(t, nil, "secret", "rm", "gone")
+	out, _, err := runRootIO(t, nil, "secret", "rm", "gone")
 	require.NoError(t, err)
 	assert.Contains(t, out, "Removed secret gone")
 
@@ -186,7 +186,7 @@ func TestSecretRm_DeletesSecret(t *testing.T) {
 func TestSecretRm_MissingSecretFails(t *testing.T) {
 	isolateVault(t)
 
-	_, _, err := runSecret(t, nil, "secret", "rm", "nope")
+	_, _, err := runRootIO(t, nil, "secret", "rm", "nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `secret "nope" not found`)
 }

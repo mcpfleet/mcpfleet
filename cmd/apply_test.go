@@ -122,9 +122,10 @@ func TestApply_MissingSecretFailsWithoutWrite(t *testing.T) {
 		}})
 	}))
 	t.Cleanup(srv.Close)
-	require.NoError(t, runRoot(t, "auth", "login", "--url", srv.URL, "--token", "tok"))
+	_, _, err := runRootIO(t, nil, "auth", "login", "--url", srv.URL, "--token", "tok")
+	require.NoError(t, err)
 
-	err := runRoot(t, "apply", "cursor")
+	_, _, err = runRootIO(t, nil, "apply", "cursor")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "github_token")
 
