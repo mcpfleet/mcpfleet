@@ -137,9 +137,38 @@ func TestList_ReturnsAppliedServers(t *testing.T) {
 	require.NoError(t, err)
 	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
 	assert.Equal(t, []schema.Server{
-		{Name: "a", Command: "cmd-a", Args: []string{"1"}, Env: map[string]schema.EnvVar{"K": {Value: "v"}}},
-		{Name: "b", Command: "cmd-b", Env: map[string]schema.EnvVar{}},
+		{Name: "a", Transport: "stdio", Command: "cmd-a", Args: []string{"1"}, Env: map[string]schema.EnvVar{"K": {Value: "v"}}},
+		{Name: "b", Transport: "stdio", Command: "cmd-b", Env: map[string]schema.EnvVar{}},
 	}, got)
+}
+
+func TestList_MapsRemoteServers(t *testing.T) {
+	isolate(t)
+	a := crush.New()
+	require.NoError(t, os.MkdirAll(filepath.Dir(a.ConfigPath()), 0o755))
+	require.NoError(t, os.WriteFile(a.ConfigPath(), []byte(`{
+  "mcp": {
+    "local": {"type": "stdio", "command": "npx", "args": ["-y", "pkg"]},
+    "untyped": {"command": "run"},
+    "events": {"type": "sse", "url": "https://example.com/sse"},
+    "remote": {"type": "http", "url": "https://example.com/mcp"}
+  }
+}`), 0o600))
+
+	got, err := a.List()
+	require.NoError(t, err)
+
+	type remote struct{ Transport, Command, URL string }
+	byName := map[string]remote{}
+	for _, s := range got {
+		byName[s.Name] = remote{s.Transport, s.Command, s.URL}
+	}
+	assert.Equal(t, map[string]remote{
+		"local":   {Transport: "stdio", Command: "npx"},
+		"untyped": {Transport: "stdio", Command: "run"},
+		"events":  {Transport: "sse", URL: "https://example.com/sse"},
+		"remote":  {Transport: "http", URL: "https://example.com/mcp"},
+	}, byName)
 }
 
 func TestList_MissingFile(t *testing.T) {

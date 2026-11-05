@@ -1,6 +1,7 @@
 package crush
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ type mcpEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"` // http | sse only
 }
 
 // mcpTypeStdio is Crush's type for a server started as a local command.
@@ -96,10 +98,12 @@ func (a *Adapter) List() ([]schema.Server, error) {
 			env[k] = schema.EnvVar{Value: v}
 		}
 		servers = append(servers, schema.Server{
-			Name:    name,
-			Command: entry.Command,
-			Args:    entry.Args,
-			Env:     env,
+			Name:      name,
+			Transport: cmp.Or(entry.Type, "stdio"),
+			URL:       entry.URL,
+			Command:   entry.Command,
+			Args:      entry.Args,
+			Env:       env,
 		})
 	}
 	return servers, nil
