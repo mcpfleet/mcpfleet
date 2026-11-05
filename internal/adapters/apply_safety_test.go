@@ -18,7 +18,7 @@ var serversKey = map[string]string{
 	"claude-code":    "mcpServers",
 	"claude-desktop": "mcpServers",
 	"windsurf":       "mcpServers",
-	"crush":          "mcpServers",
+	"crush":          "mcp",
 	"zed":            "context_servers",
 }
 
