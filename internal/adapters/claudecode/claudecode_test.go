@@ -129,3 +129,30 @@ func TestAdapter(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestList_MapsRemoteServers(t *testing.T) {
+	isolate(t)
+	a := New()
+	cfg := `{
+  "mcpServers": {
+    "local": {"command": "npx", "args": ["-y", "pkg"]},
+    "events": {"type": "sse", "url": "https://example.com/sse"},
+    "remote": {"type": "http", "url": "https://example.com/mcp"}
+  }
+}`
+	require.NoError(t, os.WriteFile(a.ConfigPath(), []byte(cfg), 0o600))
+
+	got, err := a.List()
+	require.NoError(t, err)
+
+	type remote struct{ Transport, Command, URL string }
+	byName := map[string]remote{}
+	for _, s := range got {
+		byName[s.Name] = remote{s.Transport, s.Command, s.URL}
+	}
+	assert.Equal(t, map[string]remote{
+		"local":  {Transport: "stdio", Command: "npx"},
+		"events": {Transport: "sse", URL: "https://example.com/sse"},
+		"remote": {Transport: "http", URL: "https://example.com/mcp"},
+	}, byName)
+}
