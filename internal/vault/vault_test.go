@@ -234,6 +234,21 @@ func TestSave_NewVaultKeyringErrorKeepsKey(t *testing.T) {
 	assert.Zero(t, fk.sets, "Save created a key although the keyring could not be read")
 }
 
+func TestSave_NewVaultCreatesKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	_, err := keyring.Get("mcpfleet", "vault-key")
+	require.NoError(t, err, "first save did not store a key")
+
+	v, err := vault.OpenAt(path)
+	require.NoError(t, err)
+	got, ok := v.Get("k")
+	assert.True(t, ok)
+	assert.Equal(t, "v", got)
+}
+
 func TestKeyringError(t *testing.T) {
 	path := vaultPath(t)
 	freshKeyring(t)
