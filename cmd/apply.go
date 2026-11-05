@@ -54,6 +54,8 @@ Examples:
 			if err != nil {
 				return err
 			}
+			registryURL, registrySource := registry.BaseURL()
+			log.Debug("Using registry", "url", registryURL, "source", registrySource)
 			servers, err := client.ListServers(context.Background())
 			if err != nil {
 				return err
