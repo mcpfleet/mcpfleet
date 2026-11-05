@@ -130,6 +130,7 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 
 - Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was. An applied entry is replaced as a whole, so options you added by hand to a server that mcpfleet manages (for example a timeout or disabled tools) are dropped on the next `apply`.
 - Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
+- A config file that does not exist yet is created with `0600` permissions (readable by you only), because it holds `env` values resolved from the vault. Directories `apply` has to create for it get `0700`. An existing file keeps its permissions, and so do existing directories.
 - If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
 - JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
 - Zed's `settings.json` may contain comments and trailing commas. They are kept: only the `context_servers` entries being applied change.
