@@ -31,6 +31,20 @@ var (
 	ErrKeyringUnavailable = errors.New("OS keyring unavailable")
 )
 
+// keyStore is the slice of the OS keyring the vault uses. Tests swap it via
+// export_test.go to simulate selective keyring failures.
+type keyStore interface {
+	Get(service, user string) (string, error)
+	Set(service, user, secret string) error
+}
+
+type osKeyring struct{}
+
+func (osKeyring) Get(service, user string) (string, error) { return keyring.Get(service, user) }
+func (osKeyring) Set(service, user, secret string) error   { return keyring.Set(service, user, secret) }
+
+var keys keyStore = osKeyring{}
+
 // Vault holds decrypted secrets in memory and persists them encrypted on disk.
 type Vault struct {
 	path    string
@@ -145,7 +159,7 @@ func defaultPath() (string, error) {
 }
 
 func getOrCreateKey() ([]byte, error) {
-	secret, err := keyring.Get(keyringService, keyringUser)
+	secret, err := keys.Get(keyringService, keyringUser)
 	if err == nil {
 		h := sha256.Sum256([]byte(secret))
 		return h[:], nil
@@ -157,7 +171,7 @@ func getOrCreateKey() ([]byte, error) {
 		return nil, fmt.Errorf("generate key: %w", err)
 	}
 	newSecret := fmt.Sprintf("%x", buf)
-	if err := keyring.Set(keyringService, keyringUser, newSecret); err != nil {
+	if err := keys.Set(keyringService, keyringUser, newSecret); err != nil {
 		return nil, fmt.Errorf("store key in keyring: %w", err)
 	}
 	h := sha256.Sum256([]byte(newSecret))
