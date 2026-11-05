@@ -56,11 +56,23 @@ release:
   prerelease: auto
   name_template: '{{.ProjectName}} {{.Tag}}'
 
-brew:
+homebrew_casks:
   - name: mcpfleet
     homepage: 'https://mcpfleet.dev'
     description: 'Vendor-agnostic CLI to manage and apply MCP server definitions across AI coding agents'
     license: MIT
+    binaries:
+      - mcpfleet
     repository:
       owner: mcpfleet
       name: homebrew-tap
+      # The default GITHUB_TOKEN cannot write to another repository.
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    hooks:
+      post:
+        # The binaries are not signed or notarized; drop the quarantine
+        # attribute so Gatekeeper does not block the cask's binary.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/mcpfleet"]
+          end
