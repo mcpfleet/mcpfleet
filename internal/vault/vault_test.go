@@ -176,6 +176,62 @@ func TestOpenAt_MissingKeyIsNotRegenerated(t *testing.T) {
 	assert.ErrorIs(t, err, keyring.ErrNotFound, "OpenAt stored a new key")
 }
 
+// flakyKeyring fails every Get with a non-"not found" error and counts Set.
+type flakyKeyring struct{ sets int }
+
+func (f *flakyKeyring) Get(string, string) (string, error) {
+	return "", errors.New("dbus: no session")
+}
+
+func (f *flakyKeyring) Set(string, string, string) error {
+	f.sets++
+	return nil
+}
+
+func TestOpenAt_KeyringErrorKeepsKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	_, err := vault.OpenAt(path)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Contains(t, err.Error(), "dbus: no session")
+	assert.Contains(t, err.Error(), "unlock the keyring")
+	assert.Zero(t, fk.sets, "OpenAt overwrote the key")
+}
+
+func TestSave_KeyringErrorKeepsKey(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	v, err := vault.OpenAt(path) // no file yet: no key needed
+	require.NoError(t, err)
+	saved(t, path, map[string]string{"k": "v"}) // file and key appear meanwhile
+
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	v.Set("other", "x")
+	err = v.Save()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Contains(t, err.Error(), "unlock the keyring")
+	assert.Zero(t, fk.sets, "Save overwrote the key")
+}
+
+func TestSave_NewVaultKeyringErrorKeepsKey(t *testing.T) {
+	fk := &flakyKeyring{}
+	vault.SetKeyStore(t, fk)
+	v, err := vault.OpenAt(vaultPath(t))
+	require.NoError(t, err)
+	v.Set("k", "v")
+	err = v.Save()
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyringUnavailable), "got %v", err)
+	assert.Zero(t, fk.sets, "Save created a key although the keyring could not be read")
+}
+
 func TestKeyringError(t *testing.T) {
 	path := vaultPath(t)
 	freshKeyring(t)
