@@ -224,7 +224,7 @@ func (m model) renderDashboard() string {
 	actionsCard := cardStyle.Render(
 		titleStyle.Render("⚡ Quick Actions\n\n") +
 			accentStyle.Render("• mcpfleet list") + subtleStyle.Render(" - List all servers\n") +
-			accentStyle.Render("• mcpfleet apply --all cursor") + subtleStyle.Render(" - Apply to Cursor\n") +
+			accentStyle.Render("• mcpfleet apply cursor") + subtleStyle.Render(" - Apply to Cursor\n") +
 			accentStyle.Render("• mcpfleet auth login") + subtleStyle.Render(" - Login to registry"),
 	)
 

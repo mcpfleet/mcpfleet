@@ -117,3 +117,42 @@ func TestAuthLogin_HelpShowsFlags(t *testing.T) {
 	assert.NotNil(t, login.Flags().Lookup("url"))
 	assert.NotNil(t, login.Flags().Lookup("token"))
 }
+
+func TestAuthStatus_ShowsRegistryURLAndSource(t *testing.T) {
+	tests := []struct {
+		name     string
+		loggedIn bool
+		fileURL  string
+		envURL   string
+		wantLine string
+	}{
+		{"default, logged in", true, "", "", "Registry: https://registry.mcpfleet.dev (from default)"},
+		{"file, logged in", true, "https://file.example", "", "Registry: https://file.example (from ~/.config/mcpfleet/registry_url)"},
+		{"env, logged in", true, "https://file.example", "https://env.example/", "Registry: https://env.example (from MCPFLEET_REGISTRY_URL)"},
+		{"env, not logged in", false, "", "https://env.example", "Registry: https://env.example (from MCPFLEET_REGISTRY_URL)"},
+		{"default, not logged in", false, "", "", "Registry: https://registry.mcpfleet.dev (from default)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfig(t)
+			if tt.loggedIn {
+				require.NoError(t, registry.SaveToken("mcp_secret_token_beae"))
+			}
+			if tt.fileURL != "" {
+				require.NoError(t, registry.SaveRegistryURL(tt.fileURL))
+			}
+			t.Setenv("MCPFLEET_REGISTRY_URL", tt.envURL)
+
+			out, errOut, err := runRootIO(t, nil, "auth", "status")
+			require.NoError(t, err)
+			assert.Empty(t, errOut)
+			if tt.loggedIn {
+				assert.Contains(t, out, "✓ Logged in (token: mcp_")
+				assert.NotContains(t, out, "secret_token")
+			} else {
+				assert.Contains(t, out, "Not logged in.")
+			}
+			assert.Contains(t, out, tt.wantLine+"\n")
+		})
+	}
+}

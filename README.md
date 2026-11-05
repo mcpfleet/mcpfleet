@@ -25,7 +25,7 @@ You use multiple AI coding agents — Cursor, Claude Code, Claude Desktop, Winds
 new machine setup:
   curl -fsSL https://mcpfleet.dev/install.sh | sh
   mcpfleet auth login
-  mcpfleet apply --all cursor
+  mcpfleet apply cursor
   # done.
 ```
 
@@ -96,7 +96,7 @@ mcpfleet push my-server \
 mcpfleet secret set github_token
 
 # 4. Apply all servers to Cursor
-mcpfleet apply --all cursor
+mcpfleet apply cursor
 
 # 5. Apply only 'dev'-tagged servers to Claude Code
 mcpfleet apply --tag dev claude-code
@@ -150,18 +150,23 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 
 ```
 mcpfleet auth login          Authenticate with the registry
+mcpfleet auth status         Show whether you are logged in and the registry URL in use
 mcpfleet list                List all MCP servers in the registry
 mcpfleet push <name>         Add or update an MCP server definition
 mcpfleet pull                Pull latest server definitions from registry
 mcpfleet apply <agent>       Apply registry servers to an agent config
-  --all                        Apply all servers (ignore tag filter)
-  --tag <tag>                  Apply only servers with the given tag
+  --tag <tag>                  Apply only servers with the given tag (default: all servers)
 mcpfleet delete <name>       Remove an MCP server from the registry
 mcpfleet secret set <name>   Store or update a secret in the local vault (hidden prompt)
   --stdin                      Read the value from standard input
 mcpfleet secret list         List secret names (never values)
 mcpfleet secret rm <name>    Remove a secret from the local vault
+
+Global flags:
+  -v, --verbose                Print debug logs to stderr
 ```
+
+Without `--verbose`, commands print only warnings and errors to stderr; their results go to stdout.
 
 ## Configuration
 
@@ -169,6 +174,13 @@ mcpfleet reads its registry URL from:
 1. `MCPFLEET_REGISTRY_URL` environment variable
 2. `~/.config/mcpfleet/registry_url` file
 3. Default: `https://registry.mcpfleet.dev`
+
+`mcpfleet auth status` shows the URL in use and where it came from:
+
+```
+✓ Logged in (token: mcp_************beae)
+Registry: https://registry.example.com (from MCPFLEET_REGISTRY_URL)
+```
 
 The auth token is stored in `~/.config/mcpfleet/token` after `mcpfleet auth login`.
 

@@ -276,6 +276,35 @@ func TestRegistryURL_SaveLoad(t *testing.T) {
 	assert.Equal(t, "https://r.example", got)
 }
 
+func TestBaseURL_Sources(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		setHome(t)
+		u, src := BaseURL()
+		assert.Equal(t, "https://registry.mcpfleet.dev", u)
+		assert.Equal(t, SourceDefault, src)
+	})
+	t.Run("file", func(t *testing.T) {
+		setHome(t)
+		require.NoError(t, SaveRegistryURL("https://file.example/"))
+		u, src := BaseURL()
+		assert.Equal(t, "https://file.example", u)
+		assert.Equal(t, SourceFile, src)
+	})
+	t.Run("env over file", func(t *testing.T) {
+		setHome(t)
+		require.NoError(t, SaveRegistryURL("https://file.example"))
+		t.Setenv("MCPFLEET_REGISTRY_URL", "https://env.example//")
+		u, src := BaseURL()
+		assert.Equal(t, "https://env.example", u)
+		assert.Equal(t, SourceEnv, src)
+	})
+	t.Run("source names", func(t *testing.T) {
+		assert.Equal(t, "MCPFLEET_REGISTRY_URL", string(SourceEnv))
+		assert.Equal(t, "~/.config/mcpfleet/registry_url", string(SourceFile))
+		assert.Equal(t, "default", string(SourceDefault))
+	})
+}
+
 func TestNew_BaseURLPrecedence(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		setHome(t)
