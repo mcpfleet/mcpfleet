@@ -160,6 +160,22 @@ func TestOpenAt_DifferentKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "vault: decrypt")
 }
 
+func TestOpenAt_MissingKeyIsNotRegenerated(t *testing.T) {
+	freshKeyring(t)
+	path := vaultPath(t)
+	saved(t, path, map[string]string{"k": "v"})
+
+	keyring.MockInit() // the vault file stays, its key is gone
+	_, err := vault.OpenAt(path)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, vault.ErrKeyMissing), "got %v", err)
+	assert.Contains(t, err.Error(), path)
+	assert.Contains(t, err.Error(), "restore the key, or move the file aside")
+
+	_, err = keyring.Get("mcpfleet", "vault-key")
+	assert.ErrorIs(t, err, keyring.ErrNotFound, "OpenAt stored a new key")
+}
+
 func TestKeyringError(t *testing.T) {
 	path := vaultPath(t)
 	freshKeyring(t)

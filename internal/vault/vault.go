@@ -23,6 +23,14 @@ const (
 	keyringUser    = "vault-key"
 )
 
+var (
+	// ErrKeyMissing means the OS keyring holds no vault key.
+	ErrKeyMissing = errors.New("vault key missing from the OS keyring")
+	// ErrKeyringUnavailable means the OS keyring could not be read (for
+	// example a locked keychain or no D-Bus session).
+	ErrKeyringUnavailable = errors.New("OS keyring unavailable")
+)
+
 // Vault holds decrypted secrets in memory and persists them encrypted on disk.
 type Vault struct {
 	path    string
