@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+// runForTest calls Run and restores the global rootCmd streams and args
+// afterwards, so later tests do not write into this test's buffers.
+func runForTest(t *testing.T, args []string, stdout, stderr *bytes.Buffer) int {
+	t.Helper()
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+	})
+	return Run(args, stdout, stderr)
+}
+
 func TestRun_PrintsErrorOnceToStderr(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -18,7 +30,7 @@ func TestRun_PrintsErrorOnceToStderr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := Run(tt.args, &stdout, &stderr)
+			code := runForTest(t, tt.args, &stdout, &stderr)
 			if code != 1 {
 				t.Errorf("exit code = %d, want 1", code)
 			}
@@ -41,7 +53,7 @@ func TestRun_PrintsErrorOnceToStderr(t *testing.T) {
 
 func TestRun_SuccessReturnsZero(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"help"}, &stdout, &stderr)
+	code := runForTest(t, []string{"help"}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
