@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/log v0.4.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
+	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/zalando/go-keyring v0.2.6
 	gopkg.in/yaml.v3 v3.0.1
 )

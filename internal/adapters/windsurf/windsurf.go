@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
@@ -39,17 +40,7 @@ func (a *Adapter) ConfigPath() string {
 }
 
 func (a *Adapter) Apply(servers []schema.Server) error {
-	cfgPath := a.ConfigPath()
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
-		return fmt.Errorf("windsurf: create config dir: %w", err)
-	}
-	cfg := windsurfSettings{McpServers: make(map[string]mcpEntry)}
-	if data, err := os.ReadFile(cfgPath); err == nil {
-		_ = json.Unmarshal(data, &cfg)
-		if cfg.McpServers == nil {
-			cfg.McpServers = make(map[string]mcpEntry)
-		}
-	}
+	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
 		entry := mcpEntry{
 			Command: s.Command,
@@ -61,13 +52,14 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 				entry.Env[k] = v.Value
 			}
 		}
-		cfg.McpServers[s.Name] = entry
+		entries[s.Name] = entry
 	}
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("windsurf: marshal config: %w", err)
+	// Merge into the existing file: only the entries named above change;
+	// other keys and servers are kept, and an unparsable file is an error.
+	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries, 0o644); err != nil {
+		return fmt.Errorf("windsurf: %w", err)
 	}
-	return os.WriteFile(cfgPath, out, 0o644)
+	return nil
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {

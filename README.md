@@ -97,6 +97,17 @@ mcpfleet delete my-server
 | `zed` | `~/.config/zed/settings.json` |
 | `crush` | `~/.config/crush/mcp.json` |
 
+### How `apply` changes your config
+
+`apply` merges into the agent's existing config file instead of replacing it:
+
+- Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was.
+- Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
+- If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
+- JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
+- Zed's `settings.json` may contain comments and trailing commas. They are kept: only the `context_servers` entries being applied change.
+- The file is written atomically, and a symlinked config (for example from a dotfiles repo) is updated at the link's target.
+
 ## Commands
 
 ```

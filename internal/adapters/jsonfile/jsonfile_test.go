@@ -1,0 +1,197 @@
+package jsonfile_test
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
+)
+
+func decode(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("invalid JSON written: %v\n%s", err, data)
+	}
+	return m
+}
+
+func TestUpsertEntries_MissingFileCreatesWithMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "cfg.json")
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]string{"command": "x"}}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := decode(t, path)
+	if _, ok := m["mcpServers"].(map[string]any)["a"]; !ok {
+		t.Fatalf("entry not written: %v", m)
+	}
+	if runtime.GOOS != "windows" {
+		st, _ := os.Stat(path)
+		if st.Mode().Perm() != 0o600 {
+			t.Errorf("mode = %v, want 0600", st.Mode().Perm())
+		}
+	}
+	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
+		t.Errorf("unexpected .bak for a new file")
+	}
+}
+
+func TestUpsertEntries_EmptyOrNullTreatedAsEmpty(t *testing.T) {
+	for name, content := range map[string]string{"empty": "", "whitespace": " \n\t", "null servers": `{"mcpServers":null,"k":1}`} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "cfg.json")
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if decode(t, path)["mcpServers"].(map[string]any)["a"] != float64(1) {
+				t.Errorf("entry not written")
+			}
+		})
+	}
+}
+
+func TestUpsertEntries_ReplacesOnlyNamedEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	orig := `{"z":true,"mcpServers":{"keep":{"url":"u","x":[1]},"a":{"old":1}}}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]int{"new": 2}}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := decode(t, path)
+	srv := m["mcpServers"].(map[string]any)
+	if m["z"] != true {
+		t.Errorf("top-level key lost: %v", m)
+	}
+	if keep := srv["keep"].(map[string]any); keep["url"] != "u" {
+		t.Errorf("unrelated entry changed: %v", keep)
+	}
+	if a := srv["a"].(map[string]any); a["new"] != float64(2) || a["old"] != nil {
+		t.Errorf("entry not replaced: %v", a)
+	}
+	bak, err := os.ReadFile(path + ".bak")
+	if err != nil || string(bak) != orig {
+		t.Errorf(".bak = %q, %v; want original", bak, err)
+	}
+}
+
+func TestUpsertEntries_InvalidFailsWithoutWrite(t *testing.T) {
+	for name, content := range map[string]string{
+		"syntax":      `{"a":`,
+		"array root":  `[]`,
+		"string root": `"x"`,
+		"key array":   `{"mcpServers":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "cfg.json")
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, 0o644)
+			if err == nil || !strings.Contains(err.Error(), "parse "+path) {
+				t.Fatalf("err = %v, want parse error naming the file", err)
+			}
+			got, _ := os.ReadFile(path)
+			if string(got) != content {
+				t.Errorf("file modified: %q", got)
+			}
+			if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
+				t.Errorf(".bak created on failure")
+			}
+		})
+	}
+}
+
+func TestWriteFile_FollowsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "cfg.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(`{}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "cfg.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := jsonfile.UpsertEntries(link, "mcpServers", map[string]any{"a": 1}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("symlink replaced by a regular file")
+	}
+	if _, ok := decode(t, target)["mcpServers"]; !ok {
+		t.Errorf("link target not updated")
+	}
+	st, _ := os.Stat(target)
+	if st.Mode().Perm() != 0o640 {
+		t.Errorf("target mode = %v, want 0640", st.Mode().Perm())
+	}
+	if _, err := os.Stat(target + ".bak"); err != nil {
+		t.Errorf("backup not next to link target: %v", err)
+	}
+}
+
+func TestWriteFile_ChangedDuringApply(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	if err := os.WriteFile(path, []byte(`{"v":2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := jsonfile.WriteFile(path, []byte(`{"v":3}`), []byte(`{"v":1}`), 0o644)
+	if err == nil || !strings.Contains(err.Error(), "changed during apply") {
+		t.Fatalf("err = %v, want changed during apply", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != `{"v":2}` {
+		t.Errorf("file overwritten: %s", got)
+	}
+}
+
+func TestWriteFile_FileAppearedDuringApply(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	if err := os.WriteFile(path, []byte(`{"v":2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// prev == nil means the file did not exist when it was read.
+	if err := jsonfile.WriteFile(path, []byte(`{}`), nil, 0o644); err == nil {
+		t.Fatal("expected error when a file appeared after the read")
+	}
+}
+
+func TestWriteFile_NoTempLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.json")
+	if err := jsonfile.WriteFile(path, []byte(`{}`), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := jsonfile.WriteFile(path, []byte(`{"a":1}`), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if strings.Join(names, ",") != "cfg.json,cfg.json.bak" {
+		t.Errorf("dir contents = %v", names)
+	}
+}
