@@ -41,9 +41,6 @@ func forEachAdapter(t *testing.T, fn func(t *testing.T, a adapters.Adapter, key 
 			t.Fatalf("adapter %q has no entry in serversKey", a.Name())
 		}
 		t.Run(a.Name(), func(t *testing.T) {
-			if a.Name() == "zed" {
-				t.Skip("NER-495 step 2")
-			}
 			isolate(t)
 			fn(t, a, key)
 		})
