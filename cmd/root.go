@@ -32,7 +32,7 @@ Examples:
 		if verbose {
 			log.SetLevel(log.DebugLevel)
 		} else {
-			// Warnings (e.g. a vault that cannot be opened) stay visible.
+			// Warnings and errors stay visible without --verbose.
 			log.SetLevel(log.WarnLevel)
 		}
 		return nil
