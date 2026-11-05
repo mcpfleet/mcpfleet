@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -25,11 +26,17 @@ func newAuthLoginCmd() *cobra.Command {
 	var registryURL string
 	var token string
 
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to your mcpfleet registry",
+		Long: `Log in to your mcpfleet registry.
+
+Without --token an interactive form asks for the registry URL and the token.
+Pass --url and --token for non-interactive use (scripts, CI). The registry URL
+is saved to ~/.config/mcpfleet/registry_url and used by later commands unless
+MCPFLEET_REGISTRY_URL is set.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if registryURL == "" || token == "" {
+			if token == "" {
 				// Interactive login via Huh form
 				form := huh.NewForm(
 					huh.NewGroup(
@@ -53,15 +60,49 @@ func newAuthLoginCmd() *cobra.Command {
 				return errors.New("auth token cannot be empty")
 			}
 
+			// Validate the URL before writing anything, so a bad URL leaves
+			// no half-saved login behind.
+			u := strings.TrimRight(strings.TrimSpace(registryURL), "/")
+			if u != "" {
+				if err := validateRegistryURL(u); err != nil {
+					return err
+				}
+			}
+
 			// Persist token to disk.
 			if err := registry.SaveToken(token); err != nil {
 				return fmt.Errorf("save token: %w", err)
+			}
+
+			// An empty URL keeps the previously saved one (or the default).
+			if u != "" {
+				if err := registry.SaveRegistryURL(u); err != nil {
+					return fmt.Errorf("save registry url: %w", err)
+				}
 			}
 
 			fmt.Println("✓ Logged in successfully!")
 			return nil
 		},
 	}
+	c.Flags().StringVar(&registryURL, "url", "", "registry URL, e.g. https://registry.mcpfleet.dev (saved for later commands)")
+	c.Flags().StringVar(&token, "token", "", "auth token for non-interactive login (scripts, CI); prefer the form when typing by hand")
+	return c
+}
+
+// validateRegistryURL accepts only absolute http(s) URLs with a host.
+func validateRegistryURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid registry URL %q: %w", raw, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("invalid registry URL %q: scheme must be http or https", raw)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("invalid registry URL %q: missing host", raw)
+	}
+	return nil
 }
 
 func newAuthLogoutCmd() *cobra.Command {

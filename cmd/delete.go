@@ -30,7 +30,3 @@ func newDeleteCmd() *cobra.Command {
 		},
 	}
 }
-
-func init() {
-	rootCmd.AddCommand(newDeleteCmd())
-}
