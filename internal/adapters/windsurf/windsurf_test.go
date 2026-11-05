@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -16,13 +15,14 @@ import (
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
-// isolate points HOME and APPDATA at a fresh temp dir and returns it.
+// isolate points the home directory at a fresh temp dir and returns it.
+// APPDATA points elsewhere, so a path built from it is caught.
 func isolate(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	t.Setenv("APPDATA", dir)
+	t.Setenv("APPDATA", t.TempDir())
 	return dir
 }
 
@@ -42,13 +42,9 @@ func TestName(t *testing.T) {
 	assert.Equal(t, "windsurf", windsurf.New().Name())
 }
 
-// TestConfigPath_NonWindows pins ~/.codeium/windsurf/mcp_config.json. On
-// Windows the adapter uses %APPDATA%\Windsurf, which NER-500 changes, so the
-// Windows path is deliberately not asserted here; update it in NER-500.
-func TestConfigPath_NonWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows path is changed by NER-500")
-	}
+// TestConfigPath_HomeRelative pins <home>/.codeium/windsurf/mcp_config.json
+// on the current OS; TestConfigPath_PerGOOS covers the other OSes.
+func TestConfigPath_HomeRelative(t *testing.T) {
 	dir := isolate(t)
 	assert.Equal(t, filepath.Join(dir, ".codeium", "windsurf", "mcp_config.json"), windsurf.New().ConfigPath())
 }
@@ -147,4 +143,24 @@ func TestList_InvalidJSON(t *testing.T) {
 	_, err := a.List()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "windsurf: parse config")
+}
+
+func TestApply_PreservesOtherKeys(t *testing.T) {
+	isolate(t)
+	a := windsurf.New()
+	require.NoError(t, os.MkdirAll(filepath.Dir(a.ConfigPath()), 0o755))
+	require.NoError(t, os.WriteFile(a.ConfigPath(), []byte(`{
+  "theme": "dark",
+  "mcpServers": {"manual": {"command": "keep", "disabled": true}}
+}`), 0o644))
+
+	require.NoError(t, a.Apply([]schema.Server{{Name: "new", Command: "run"}}))
+
+	data, err := os.ReadFile(a.ConfigPath())
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(data, &cfg))
+	assert.Equal(t, "dark", cfg["theme"])
+	assert.Equal(t, map[string]any{"command": "keep", "disabled": true}, servers(t, a)["manual"])
+	assert.Equal(t, map[string]any{"command": "run"}, servers(t, a)["new"])
 }

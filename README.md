@@ -111,20 +111,24 @@ mcpfleet delete my-server
 |-------|-------------|
 | `claude-code` | `~/.claude.json` (`mcpServers`, user scope); `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set |
 | `claude-desktop` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`; other: `~/.claude/claude_desktop_config.json` |
-| `crush` | `~/.config/crush/mcp.json` |
+| `crush` | `~/.config/crush/crush.json` (`mcp`); `$XDG_CONFIG_HOME/crush/crush.json` when `XDG_CONFIG_HOME` is set; `$CRUSH_GLOBAL_CONFIG/crush.json` when `CRUSH_GLOBAL_CONFIG` is set. The same `~/.config` location is used on Windows (`%USERPROFILE%\.config\crush\crush.json`) |
 | `cursor` | `~/.cursor/mcp.json` |
-| `windsurf` | `~/.codeium/windsurf/mcp_config.json` |
+| `windsurf` | `~/.codeium/windsurf/mcp_config.json` (`mcpServers`); Windows: `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
 | `zed` | `~/.config/zed/settings.json` |
 
 `claude-code` adds servers to Claude Code's user scope, the same place `claude mcp add -s user` writes to, so they are available in every project. `~/.claude.json` also holds the rest of Claude Code's state (login, projects); `apply` changes only the `mcpServers` entries it writes and keeps the file's `0600` permissions. Claude Code may rewrite this file while it runs, so run `apply claude-code` with Claude Code closed, or start a new session afterwards, and check the result with `claude mcp list`.
 
 > **Upgrading from an earlier version:** `apply claude-code` used to write to Claude Desktop's `claude_desktop_config.json`. Servers applied that way stay there. To keep updating that file, use `mcpfleet apply claude-desktop`.
 
+`crush` writes Crush's global `crush.json`, each server under `mcp` with `"type": "stdio"`. Crush still reads `crush.json` but marks the JSON format as deprecated in favour of its `crushrc` script; if a `crushrc` in the same directory defines a server with the same name, that one wins. Crush expands `$VAR` and `$(...)` in `args` and `env`, so a value containing `$` is interpreted by Crush. Earlier versions of mcpfleet wrote `~/.config/crush/mcp.json`, which Crush never reads; run `mcpfleet apply crush` again and delete the old file.
+
+On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which Windsurf does not read. Run `mcpfleet apply windsurf` again; the old file can be deleted.
+
 ### How `apply` changes your config
 
 `apply` merges into the agent's existing config file instead of replacing it:
 
-- Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was.
+- Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was. An applied entry is replaced as a whole, so options you added by hand to a server that mcpfleet manages (for example a timeout or disabled tools) are dropped on the next `apply`.
 - Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
 - If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
 - JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
