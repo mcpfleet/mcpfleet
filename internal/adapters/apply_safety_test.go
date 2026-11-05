@@ -207,3 +207,74 @@ func TestApply_DoesNotEscapeHTMLCharacters(t *testing.T) {
 		}
 	})
 }
+
+// missingDirs returns the directories between path and its nearest existing
+// ancestor, i.e. the ones Apply has to create.
+func missingDirs(t *testing.T, path string) []string {
+	t.Helper()
+	var dirs []string
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(dir); err == nil {
+			return dirs
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		dirs = append(dirs, dir)
+		if dir == filepath.Dir(dir) {
+			return dirs
+		}
+	}
+}
+
+func TestApply_NewFileIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions do not apply on Windows")
+	}
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		created := missingDirs(t, path)
+
+		if err := a.Apply(newServer); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		st, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("config not created: %v", err)
+		}
+		if got := st.Mode().Perm(); got != 0o600 {
+			t.Errorf("new config mode = %v, want 0600", got)
+		}
+		for _, dir := range created {
+			st, err := os.Stat(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := st.Mode().Perm(); got != 0o700 {
+				t.Errorf("new dir %s mode = %v, want 0700", dir, got)
+			}
+		}
+	})
+}
+
+func TestApply_ExistingFileKeepsMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions do not apply on Windows")
+	}
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		writeConfig(t, path, `{"`+key+`":{}}`, 0o644)
+
+		if err := a.Apply(newServer); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		for _, p := range []string{path, path + ".bak"} {
+			st, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := st.Mode().Perm(); got != 0o644 {
+				t.Errorf("%s mode = %v, want 0644 (kept)", filepath.Base(p), got)
+			}
+		}
+	})
+}

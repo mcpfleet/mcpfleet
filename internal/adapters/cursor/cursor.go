@@ -56,7 +56,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries, 0o644); err != nil {
+	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
 		return fmt.Errorf("cursor: %w", err)
 	}
 	return nil

@@ -24,9 +24,10 @@ func decode(t *testing.T, path string) map[string]any {
 	return m
 }
 
-func TestUpsertEntries_MissingFileCreatesWithMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sub", "cfg.json")
-	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]string{"command": "x"}}, 0o600); err != nil {
+func TestUpsertEntries_MissingFileCreatesPrivate(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a", "b", "cfg.json")
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]string{"command": "x"}}); err != nil {
 		t.Fatal(err)
 	}
 	m := decode(t, path)
@@ -38,9 +39,43 @@ func TestUpsertEntries_MissingFileCreatesWithMode(t *testing.T) {
 		if st.Mode().Perm() != 0o600 {
 			t.Errorf("mode = %v, want 0600", st.Mode().Perm())
 		}
+		for _, dir := range []string{filepath.Join(root, "a"), filepath.Join(root, "a", "b")} {
+			st, err := os.Stat(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Mode().Perm() != 0o700 {
+				t.Errorf("dir %s mode = %v, want 0700", dir, st.Mode().Perm())
+			}
+		}
 	}
 	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
 		t.Errorf("unexpected .bak for a new file")
+	}
+}
+
+func TestWriteFile_ExistingFileKeepsMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions do not apply on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := jsonfile.WriteFile(path, []byte(`{"a":1}`), []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{path, path + ".bak"} {
+		st, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Mode().Perm() != 0o644 {
+			t.Errorf("%s mode = %v, want 0644", filepath.Base(p), st.Mode().Perm())
+		}
 	}
 }
 
@@ -51,7 +86,7 @@ func TestUpsertEntries_EmptyOrNullTreatedAsEmpty(t *testing.T) {
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, 0o644); err != nil {
+			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}); err != nil {
 				t.Fatal(err)
 			}
 			if decode(t, path)["mcpServers"].(map[string]any)["a"] != float64(1) {
@@ -67,7 +102,7 @@ func TestUpsertEntries_ReplacesOnlyNamedEntries(t *testing.T) {
 	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]int{"new": 2}}, 0o644); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]int{"new": 2}}); err != nil {
 		t.Fatal(err)
 	}
 	m := decode(t, path)
@@ -99,7 +134,7 @@ func TestUpsertEntries_InvalidFailsWithoutWrite(t *testing.T) {
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, 0o644)
+			err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1})
 			if err == nil || !strings.Contains(err.Error(), "parse "+path) {
 				t.Fatalf("err = %v, want parse error naming the file", err)
 			}
@@ -130,7 +165,7 @@ func TestWriteFile_FollowsSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonfile.UpsertEntries(link, "mcpServers", map[string]any{"a": 1}, 0o644); err != nil {
+	if err := jsonfile.UpsertEntries(link, "mcpServers", map[string]any{"a": 1}); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(link)
@@ -157,7 +192,7 @@ func TestWriteFile_ChangedDuringApply(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"v":2}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := jsonfile.WriteFile(path, []byte(`{"v":3}`), []byte(`{"v":1}`), 0o644)
+	err := jsonfile.WriteFile(path, []byte(`{"v":3}`), []byte(`{"v":1}`))
 	if err == nil || !strings.Contains(err.Error(), "changed during apply") {
 		t.Fatalf("err = %v, want changed during apply", err)
 	}
@@ -172,7 +207,7 @@ func TestWriteFile_FileAppearedDuringApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	// prev == nil means the file did not exist when it was read.
-	if err := jsonfile.WriteFile(path, []byte(`{}`), nil, 0o644); err == nil {
+	if err := jsonfile.WriteFile(path, []byte(`{}`), nil); err == nil {
 		t.Fatal("expected error when a file appeared after the read")
 	}
 }
@@ -180,10 +215,10 @@ func TestWriteFile_FileAppearedDuringApply(t *testing.T) {
 func TestWriteFile_NoTempLeftovers(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cfg.json")
-	if err := jsonfile.WriteFile(path, []byte(`{}`), nil, 0o644); err != nil {
+	if err := jsonfile.WriteFile(path, []byte(`{}`), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonfile.WriteFile(path, []byte(`{"a":1}`), []byte(`{}`), 0o644); err != nil {
+	if err := jsonfile.WriteFile(path, []byte(`{"a":1}`), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(dir)

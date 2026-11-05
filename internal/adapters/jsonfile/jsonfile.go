@@ -14,15 +14,24 @@ import (
 	"path/filepath"
 )
 
+// Permissions of what mcpfleet creates. Agent configs hold env values
+// resolved from the vault, i.e. secrets in plain text, so a new config file
+// is readable by its owner only, and a new config directory is private too
+// (as the XDG Base Directory spec recommends). Existing files and
+// directories keep their modes.
+const (
+	NewFileMode fs.FileMode = 0o600
+	NewDirMode  fs.FileMode = 0o700
+)
+
 // UpsertEntries sets entries[name] under the top-level object key of the
 // JSON file at path, leaving every other key and every other entry intact.
 //
 // A missing file, an empty file, or a missing/null key count as empty. A file
 // that is not valid JSON, whose root is not an object, or whose key is not an
-// object yields an error and the file is left untouched. newMode is the
-// permission used when the file does not exist yet; an existing file keeps
-// its mode.
-func UpsertEntries(path, key string, entries map[string]any, newMode fs.FileMode) error {
+// object yields an error and the file is left untouched. A new file is
+// created with NewFileMode; an existing file keeps its mode.
+func UpsertEntries(path, key string, entries map[string]any) error {
 	prev, err := Read(path)
 	if err != nil {
 		return err
@@ -62,7 +71,7 @@ func UpsertEntries(path, key string, entries map[string]any, newMode fs.FileMode
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", path, err)
 	}
-	return WriteFile(path, out, prev, newMode)
+	return WriteFile(path, out, prev)
 }
 
 // Marshal encodes v like json.MarshalIndent, but leaves &, < and > as they
@@ -106,15 +115,16 @@ func Read(path string) ([]byte, error) {
 // exist). If the file no longer matches prev, WriteFile fails instead of
 // discarding a concurrent change. A symlink at path is followed, so the link
 // itself is kept. An existing file is first copied to <file>.bak with its
-// mode, and keeps that mode; a new file gets newMode. The write goes to a
-// temporary file in the same directory that is then renamed over the target.
-func WriteFile(path string, data, prev []byte, newMode fs.FileMode) error {
+// mode, and keeps that mode; a new file gets NewFileMode and missing parent
+// directories get NewDirMode. The write goes to a temporary file in the same
+// directory that is then renamed over the target.
+func WriteFile(path string, data, prev []byte) error {
 	target, err := resolve(path)
 	if err != nil {
 		return err
 	}
 
-	mode := newMode
+	mode := NewFileMode
 	cur, err := Read(target)
 	if err != nil {
 		return err
@@ -137,7 +147,7 @@ func WriteFile(path string, data, prev []byte, newMode fs.FileMode) error {
 		}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), NewDirMode); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	return atomicWrite(target, data, mode)

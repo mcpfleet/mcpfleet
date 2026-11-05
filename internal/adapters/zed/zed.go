@@ -120,7 +120,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		return fmt.Errorf("zed: %w", err)
 	}
 
-	if err := jsonfile.WriteFile(cfgPath, v.Pack(), prev, 0o644); err != nil {
+	if err := jsonfile.WriteFile(cfgPath, v.Pack(), prev); err != nil {
 		return fmt.Errorf("zed: %w", err)
 	}
 	return nil
