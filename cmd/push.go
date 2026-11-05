@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -39,7 +40,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	for _, srv := range servers {
 		existing, err := client.GetServer(cmd.Context(), srv.Name)
-		if err != nil && err.Error() != "registry: not found" {
+		if err != nil && !errors.Is(err, registry.ErrNotFound) {
 			return fmt.Errorf("get server %q: %w", srv.Name, err)
 		}
 
