@@ -60,8 +60,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	// A new file is created 0600 like Claude Code does: it holds account state.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries, 0o600); err != nil {
+	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
 		return fmt.Errorf("claude-code: %w", err)
 	}
 	return nil
