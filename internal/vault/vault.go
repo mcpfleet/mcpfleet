@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/zalando/go-keyring"
 )
@@ -112,6 +113,16 @@ func (v *Vault) Set(key, value string) {
 // Delete removes a secret.
 func (v *Vault) Delete(key string) {
 	delete(v.secrets, key)
+}
+
+// Names returns the names of all stored secrets, sorted, without values.
+func (v *Vault) Names() []string {
+	names := make([]string, 0, len(v.secrets))
+	for name := range v.secrets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Save encrypts and writes the vault to disk.

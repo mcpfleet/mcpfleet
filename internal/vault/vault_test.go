@@ -71,6 +71,18 @@ func TestSetGetDelete(t *testing.T) {
 	v.Delete("never-set") // no panic
 }
 
+func TestNames_SortedWithoutValues(t *testing.T) {
+	v, err := vault.OpenAt(vaultPath(t))
+	require.NoError(t, err)
+	assert.Empty(t, v.Names())
+
+	v.Set("zeta", "z-secret")
+	v.Set("alpha", "a-secret")
+	v.Set("mid", "m-secret")
+
+	assert.Equal(t, []string{"alpha", "mid", "zeta"}, v.Names())
+}
+
 func TestSave_CreatesParentDirAndPrivateFile(t *testing.T) {
 	freshKeyring(t)
 	path := vaultPath(t)

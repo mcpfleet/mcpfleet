@@ -92,17 +92,26 @@ mcpfleet push my-server \
   --args "-y,@modelcontextprotocol/server-filesystem" \
   --tag dev
 
-# 3. Apply all servers to Cursor
+# 3. Store the secrets your servers reference (env: GITHUB_TOKEN: {secret: github_token})
+mcpfleet secret set github_token
+
+# 4. Apply all servers to Cursor
 mcpfleet apply --all cursor
 
-# 4. Apply only 'dev'-tagged servers to Claude Code
+# 5. Apply only 'dev'-tagged servers to Claude Code
 mcpfleet apply --tag dev claude-code
 
-# 5. List all servers in the registry
+# 6. List all servers in the registry
 mcpfleet list
 
-# 6. Remove a server
+# 7. Remove a server
 mcpfleet delete my-server
+```
+
+`secret set` asks for the value with a hidden prompt; it never takes the value as an argument. In scripts, pipe it in with `--stdin` (one trailing newline is dropped):
+
+```bash
+printf '%s' "$GITHUB_TOKEN" | mcpfleet secret set github_token --stdin
 ```
 
 ## Supported agents
@@ -131,6 +140,7 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 - Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was. An applied entry is replaced as a whole, so options you added by hand to a server that mcpfleet manages (for example a timeout or disabled tools) are dropped on the next `apply`.
 - Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
 - A config file that does not exist yet is created with `0600` permissions (readable by you only), because it holds `env` values resolved from the vault. Directories `apply` has to create for it get `0700`. An existing file keeps its permissions, and so do existing directories.
+- An `env` entry that references a secret (`{secret: github_token}`) is filled from the local vault. If a referenced secret is not in the vault, or the vault cannot be opened, `apply` stops with an error naming the secret and writes nothing. Store it with `mcpfleet secret set <name>` and run `apply` again.
 - If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
 - JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
 - Zed's `settings.json` may contain comments and trailing commas. They are kept: only the `context_servers` entries being applied change.
@@ -147,6 +157,10 @@ mcpfleet apply <agent>       Apply registry servers to an agent config
   --all                        Apply all servers (ignore tag filter)
   --tag <tag>                  Apply only servers with the given tag
 mcpfleet delete <name>       Remove an MCP server from the registry
+mcpfleet secret set <name>   Store or update a secret in the local vault (hidden prompt)
+  --stdin                      Read the value from standard input
+mcpfleet secret list         List secret names (never values)
+mcpfleet secret rm <name>    Remove a secret from the local vault
 ```
 
 ## Configuration
@@ -157,6 +171,8 @@ mcpfleet reads its registry URL from:
 3. Default: `https://registry.mcpfleet.dev`
 
 The auth token is stored in `~/.config/mcpfleet/token` after `mcpfleet auth login`.
+
+Secrets set with `mcpfleet secret set` are stored encrypted (AES-256-GCM) in `~/.config/mcpfleet/vault.enc`. The encryption key is kept in the OS keyring (macOS Keychain, GNOME Keyring/KWallet, Windows Credential Manager). They never leave your machine: the registry holds only the secret names.
 
 ## Self-hosting
 

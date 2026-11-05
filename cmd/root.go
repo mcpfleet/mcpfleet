@@ -18,6 +18,7 @@ server definitions. Define your servers once, apply them to any AI coding agent.
 Examples:
   mcpfleet auth login
   mcpfleet list
+  mcpfleet secret set github_token
   mcpfleet apply --all cursor
   mcpfleet apply --tag dev claude-code`,
 	// When no subcommand is provided, show the TUI
@@ -40,6 +41,7 @@ func init() {
 		newApplyCmd(),
 		newPushCmd(),
 		newDeleteCmd(),
+		newSecretCmd(),
 	)
 	// Silence default error output – we handle it ourselves
 	rootCmd.SilenceErrors = true
