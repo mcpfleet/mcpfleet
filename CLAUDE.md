@@ -5,6 +5,7 @@ Go CLI (with a Bubbletea TUI as the default command) that applies MCP server def
 ## Commands
 
 ```bash
+gofmt -l .                      # list unformatted files (CI fails if any; fix with gofmt -w .)
 go build ./...                  # build every package
 go vet ./...                    # static checks (CI runs this)
 go test ./... -count=1          # unit tests (CI runs them with -v)
@@ -12,7 +13,17 @@ go run ./cmd/mcpfleet           # run the CLI / TUI locally
 goreleaser check                # validate .goreleaser.yml (needs goreleaser installed)
 ```
 
-CI (`.github/workflows/ci.yml`) runs `go mod tidy`, build, vet and tests on Go 1.23 for every PR to `main`.
+CI (`.github/workflows/ci.yml`) runs a `gofmt -l .` check (it fails on any unformatted Go file), `go mod tidy`, build, vet and tests on Go 1.23 for every PR to `main`. Run `gofmt -w .` before pushing.
+
+## Commit messages
+
+Commits use `<ISSUE-ID>: <summary>` (e.g. `NER-123: add zed adapter`). The release changelog (`changelog.filters` in `.goreleaser.yml`) is built from these subjects and drops some of them, so name commits accordingly:
+
+- a commit that only adds or changes tests starts with `<ISSUE-ID>: test …` (e.g. `NER-123: test zed adapter merge`);
+- a commit that only changes CI starts with `<ISSUE-ID>: ci: …`;
+- every other commit describes the user-visible change and must not start with `test` or `ci`, or it disappears from the changelog.
+
+Start-of-work commits (`Rozpoczęcie prac nad <ISSUE-ID>`) and merge commits are dropped as well.
 
 ## Platform
 
