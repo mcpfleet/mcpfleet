@@ -78,16 +78,17 @@ func TestApply_PreservesJSONCSettings(t *testing.T) {
 		t.Errorf("editor settings lost: %v", m)
 	}
 	cs := m["context_servers"].(map[string]any)
-	if cmd := cs["old"].(map[string]any)["command"].(map[string]any); cmd["path"] != "a" {
-		t.Errorf("unrelated server changed: %v", cs["old"])
+	// The untouched nested entry keeps its bytes, comment included.
+	if !strings.Contains(text, `"old": {"command": {"path": "a"}}, // keep me`) {
+		t.Errorf("unrelated server changed:\n%s", text)
 	}
-	if cmd := cs["replace-me"].(map[string]any)["command"].(map[string]any); cmd["path"] != "fresh" {
-		t.Errorf("server not replaced: %v", cs["replace-me"])
+	if got, want := cs["replace-me"], map[string]any{"command": "fresh"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("replace-me = %v, want %v", got, want)
 	}
-	if cmd := cs["new-srv"].(map[string]any)["command"].(map[string]any); cmd["path"] != "npx" {
-		t.Errorf("server not added: %v", cs["new-srv"])
+	if got, want := cs["new-srv"], map[string]any{"command": "npx", "args": []any{"-y", "pkg"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("new-srv = %v, want %v", got, want)
 	}
-	if !strings.Contains(text, "\n    \"new-srv\": {\n      \"command\": {") {
+	if !strings.Contains(text, "\n    \"new-srv\": {\n      \"command\": \"npx\",\n      \"args\": [") {
 		t.Errorf("new server not indented like its siblings:\n%s", text)
 	}
 	if strings.Contains(text, "stale") {
@@ -194,5 +195,36 @@ func TestList_MapsRemoteHTTPServers(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Transport != "http" || got[0].URL != "https://example.com/mcp" || got[0].Command != "" {
 		t.Errorf("List = %+v, want one http server at https://example.com/mcp", got)
+	}
+}
+
+func TestApply_ReplacesNestedEntryWithFlat(t *testing.T) {
+	path := setup(t, `{
+  // mine
+  "context_servers": {
+    "gh": {"command": {"path": "old", "args": ["x"], "env": {"A": "b"}}}, // gh
+  },
+}
+`)
+	err := zed.New().Apply([]schema.Server{{
+		Name: "gh", Command: "npx", Args: []string{"-y", "gh"},
+		Env: map[string]schema.EnvVar{"K": {Value: "v"}},
+	}})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	for _, want := range []string{"// mine", "// gh"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("comment %q lost:\n%s", want, out)
+		}
+	}
+	cs, _ := standardize(t, out)["context_servers"].(map[string]any)
+	want := map[string]any{"command": "npx", "args": []any{"-y", "gh"}, "env": map[string]any{"K": "v"}}
+	if got := cs["gh"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("gh = %v, want %v", got, want)
+	}
+	if strings.Contains(string(out), "path") {
+		t.Errorf("nested command left behind:\n%s", out)
 	}
 }
