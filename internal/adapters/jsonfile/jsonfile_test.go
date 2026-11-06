@@ -230,3 +230,43 @@ func TestWriteFile_NoTempLeftovers(t *testing.T) {
 		t.Errorf("dir contents = %v", names)
 	}
 }
+
+func TestHomeVar(t *testing.T) {
+	for goos, want := range map[string]string{
+		"linux":   "HOME",
+		"darwin":  "HOME",
+		"freebsd": "HOME",
+		"windows": "USERPROFILE",
+		"plan9":   "home",
+	} {
+		if got := jsonfile.HomeVar(goos); got != want {
+			t.Errorf("HomeVar(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}
+
+func TestRequireAbs(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "cfg.json")
+	if got, err := jsonfile.RequireAbs("agent", abs, "HOME"); err != nil || got != abs {
+		t.Errorf("RequireAbs(abs) = %q, %v; want %q, nil", got, err, abs)
+	}
+
+	cases := []struct {
+		vars []string
+		want string
+	}{
+		{[]string{"HOME"}, "agent: cannot determine config directory (set HOME)"},
+		{[]string{"HOME", "XDG_CONFIG_HOME"}, "agent: cannot determine config directory (set HOME or XDG_CONFIG_HOME)"},
+		{[]string{"A", "B", "C"}, "agent: cannot determine config directory (set A, B or C)"},
+	}
+	for _, c := range cases {
+		got, err := jsonfile.RequireAbs("agent", filepath.Join(".cfg", "x.json"), c.vars...)
+		if err == nil {
+			t.Errorf("RequireAbs(relative, %v) = %q, nil; want an error", c.vars, got)
+			continue
+		}
+		if err.Error() != c.want {
+			t.Errorf("RequireAbs(relative, %v) error = %q, want %q", c.vars, err, c.want)
+		}
+	}
+}

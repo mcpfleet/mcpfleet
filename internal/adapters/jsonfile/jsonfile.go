@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Permissions of what mcpfleet creates. Agent configs hold env values
@@ -23,6 +24,33 @@ const (
 	NewFileMode fs.FileMode = 0o600
 	NewDirMode  fs.FileMode = 0o700
 )
+
+// HomeVar returns the environment variable os.UserHomeDir reads on goos:
+// USERPROFILE on Windows, home on Plan 9 and HOME elsewhere.
+func HomeVar(goos string) string {
+	switch goos {
+	case "windows":
+		return "USERPROFILE"
+	case "plan9":
+		return "home"
+	}
+	return "HOME"
+}
+
+// RequireAbs returns path when it is absolute. A relative path means the
+// directory it was built from is unknown (an empty home or config variable),
+// so reading or writing it would hit the working directory instead; the
+// error names agent and the variables that would fix it.
+func RequireAbs(agent, path string, vars ...string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	set := strings.Join(vars, " or ")
+	if n := len(vars); n > 2 {
+		set = strings.Join(vars[:n-1], ", ") + " or " + vars[n-1]
+	}
+	return "", fmt.Errorf("%s: cannot determine config directory (set %s)", agent, set)
+}
 
 // UpsertEntries sets entries[name] under the top-level object key of the
 // JSON file at path, leaving every other key and every other entry intact.
