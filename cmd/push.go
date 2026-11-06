@@ -39,9 +39,12 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, srv := range servers {
-		existing, err := client.GetServer(cmd.Context(), srv.Name)
-		if err != nil && !errors.Is(err, registry.ErrNotFound) {
-			return fmt.Errorf("get server %q: %w", srv.Name, err)
+		var existing *schema.Server
+		if addressable(srv.Name) {
+			existing, err = client.GetServer(cmd.Context(), srv.Name)
+			if err != nil && !errors.Is(err, registry.ErrNotFound) {
+				return fmt.Errorf("get server %q: %w", srv.Name, err)
+			}
 		}
 
 		s := srv
@@ -58,4 +61,13 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+// addressable reports whether name can be looked up as one segment of
+// /v1/servers/{id}. "" names the collection itself, and "." and ".." are
+// dot segments that clients and proxies normalize away, so such a lookup
+// would hit another route. push creates those names without a lookup and
+// lets the registry reject them with its own message.
+func addressable(name string) bool {
+	return name != "" && name != "." && name != ".."
 }
