@@ -25,14 +25,19 @@ type mcpEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
-	URL     string            `json:"url,omitempty"` // http | sse only
+	URL     string            `json:"url,omitempty"`     // http | sse only
+	Headers map[string]string `json:"headers,omitempty"` // http | sse only
 }
 
 // remoteEntry is the entry Apply writes for a remote (http or sse) server:
-// the transport and its address, with no command, args or env.
+// the transport, its address and the HTTP headers, with no command, args or
+// env. Claude Code reads "headers" for http and sse servers
+// (https://code.claude.com/docs/en/mcp, "claude mcp add --header") and
+// expands ${VAR} in their values.
 type remoteEntry struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // Adapter implements adapters.Adapter for Claude Code (claude.ai CLI).
@@ -76,7 +81,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			continue // never write an entry with an empty command
 		}
 		if s.IsRemote() {
-			entries[s.Name] = remoteEntry{Type: s.Transport, URL: s.URL}
+			entries[s.Name] = remoteEntry{Type: s.Transport, URL: s.URL, Headers: schema.Values(s.Headers)}
 			continue
 		}
 		entry := mcpEntry{
@@ -130,6 +135,7 @@ func (a *Adapter) List() ([]schema.Server, error) {
 			Name:      name,
 			Transport: cmp.Or(entry.Type, "stdio"),
 			URL:       entry.URL,
+			Headers:   schema.Literals(entry.Headers),
 			Command:   entry.Command,
 			Args:      entry.Args,
 			Env:       env,
