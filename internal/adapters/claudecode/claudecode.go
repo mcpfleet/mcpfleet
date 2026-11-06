@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
@@ -51,6 +52,13 @@ func (a *Adapter) ConfigPath() string {
 	return filepath.Join(home, ".claude.json")
 }
 
+// path is ConfigPath for reading and writing: it refuses a relative path,
+// which an empty home directory or a relative CLAUDE_CONFIG_DIR gives, so the
+// config is never resolved against the working directory.
+func (a *Adapter) path() (string, error) {
+	return jsonfile.RequireAbs(a.Name(), a.ConfigPath(), jsonfile.HomeVar(runtime.GOOS), "CLAUDE_CONFIG_DIR")
+}
+
 // SupportsTransport reports whether the config file can hold a server with
 // the given transport: stdio (also the empty transport), http and sse.
 func (a *Adapter) SupportsTransport(transport string) bool {
@@ -89,14 +97,22 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
+	p, err := a.path()
+	if err != nil {
+		return err
+	}
+	if err := jsonfile.UpsertEntries(p, "mcpServers", entries); err != nil {
 		return fmt.Errorf("claude-code: %w", err)
 	}
 	return nil
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {
-	data, err := os.ReadFile(a.ConfigPath())
+	p, err := a.path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("claude-code: read config: %w", err)
 	}
