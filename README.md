@@ -23,7 +23,7 @@ You use multiple AI coding agents — Cursor, Claude Code, Claude Desktop, Winds
 
 ```
 new machine setup:
-  curl -fsSL https://mcpfleet.dev/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
   mcpfleet auth login
   mcpfleet apply cursor
   # done.
@@ -48,11 +48,19 @@ brew install mcpfleet/tap/mcpfleet
 
 The formula is a Homebrew cask in the [`mcpfleet/homebrew-tap`](https://github.com/mcpfleet/homebrew-tap) repository, updated on every release. The binaries are not signed or notarized yet; on macOS the cask removes the quarantine attribute so Gatekeeper does not block `mcpfleet`.
 
-### curl (Linux / macOS)
+### Install script (Linux / macOS)
 
 ```bash
-curl -fsSL https://mcpfleet.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
 ```
+
+The script picks the archive for your OS and architecture from the latest [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases), checks it against `checksums.txt` and installs `mcpfleet` to `/usr/local/bin` when that directory is writable, otherwise to `~/.local/bin`. It never calls `sudo`. Set `MCPFLEET_VERSION=0.1.0` to install a specific version, or `MCPFLEET_INSTALL_DIR` to choose the directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | MCPFLEET_VERSION=0.1.0 MCPFLEET_INSTALL_DIR="$HOME/bin" sh
+```
+
+The script installs released versions only, so it works once the first release is published; until then it stops with `no mcpfleet release found` and installs nothing. Use `go install` or build from source in the meantime.
 
 ### Go install
 
@@ -62,15 +70,49 @@ go install github.com/mcpfleet/mcpfleet/cmd/mcpfleet@latest
 
 ### Download binary
 
-Every [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases) has archives for Linux, macOS and Windows on amd64 and arm64 (`mcpfleet_<version>_<os>_<arch>.tar.gz`, `.zip` on Windows) plus `checksums.txt`. Download the one for your platform, check it and put the binary on your `PATH`:
+Every [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases) has an archive per platform, named `mcpfleet_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows), where `<os>` is `linux`, `darwin` or `windows` and `<arch>` is `amd64` or `arm64`, plus `checksums.txt` with their SHA-256 sums. `<version>` is the release tag without the leading `v`: tag `v0.1.0` publishes `mcpfleet_0.1.0_linux_amd64.tar.gz`. Each archive holds the `mcpfleet` binary (`mcpfleet.exe` on Windows), `LICENSE` and `README.md`.
+
+#### Linux / macOS
+
+Set `VERSION` to the latest version from the [Releases page](https://github.com/mcpfleet/mcpfleet/releases), and `OS` and `ARCH` to your platform:
 
 ```bash
-VERSION=0.1.0
-curl -fsSLO "https://github.com/mcpfleet/mcpfleet/releases/download/v${VERSION}/mcpfleet_${VERSION}_linux_amd64.tar.gz"
+VERSION=0.1.0          # latest version from the Releases page
+OS=linux ARCH=amd64    # macOS on Apple Silicon: OS=darwin ARCH=arm64
+FILE="mcpfleet_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fsSLO "https://github.com/mcpfleet/mcpfleet/releases/download/v${VERSION}/${FILE}"
 curl -fsSLO "https://github.com/mcpfleet/mcpfleet/releases/download/v${VERSION}/checksums.txt"
-sha256sum --ignore-missing -c checksums.txt
-tar -xzf "mcpfleet_${VERSION}_linux_amd64.tar.gz" mcpfleet
+grep " ${FILE}\$" checksums.txt | sha256sum -c -
+```
+
+On macOS, where `sha256sum` may be missing, verify with `shasum` instead:
+
+```bash
+grep " ${FILE}\$" checksums.txt | shasum -a 256 -c -
+```
+
+The check prints `mcpfleet_<version>_<os>_<arch>.tar.gz: OK`. Anything else means the download is broken: do not install it. Once it says `OK`, unpack the binary and install it:
+
+```bash
+tar -xzf "${FILE}" mcpfleet
 sudo install mcpfleet /usr/local/bin/
+```
+
+#### Windows (PowerShell)
+
+```powershell
+$Version = "0.1.0"    # latest version from the Releases page
+$File = "mcpfleet_${Version}_windows_amd64.zip"    # ARM: windows_arm64
+Invoke-WebRequest "https://github.com/mcpfleet/mcpfleet/releases/download/v$Version/$File" -OutFile $File
+Invoke-WebRequest "https://github.com/mcpfleet/mcpfleet/releases/download/v$Version/checksums.txt" -OutFile checksums.txt
+$expected = ((Select-String -Path checksums.txt -Pattern " $File$").Line -split '\s+')[0]
+if ((Get-FileHash $File -Algorithm SHA256).Hash -eq $expected) { "${File}: OK" } else { "${File}: checksum mismatch, do not install" }
+```
+
+Once it says `OK`, unpack the archive and add the `mcpfleet` folder to your `PATH`:
+
+```powershell
+Expand-Archive $File -DestinationPath mcpfleet
 ```
 
 ### Check the installation

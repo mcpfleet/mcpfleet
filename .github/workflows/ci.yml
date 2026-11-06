@@ -48,3 +48,83 @@ jobs:
           distribution: goreleaser
           version: '~> v2'
           args: check
+
+  install-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Shellcheck
+        run: shellcheck -s sh install.sh scripts/test-install.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build snapshot archives
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --snapshot --clean
+        env:
+          # A snapshot publishes nothing; the cask template only needs the variable set.
+          HOMEBREW_TAP_GITHUB_TOKEN: unused
+
+      - name: Test install.sh (dash)
+        run: sh scripts/test-install.sh dist
+
+      - name: Upload snapshot archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-archives
+          path: |
+            dist/checksums.txt
+            dist/*.tar.gz
+          retention-days: 1
+
+  install-script-platforms:
+    needs: install-script
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alpine linux/amd64
+            os: ubuntu-latest
+            platform: linux/amd64
+          - name: alpine linux/arm64
+            os: ubuntu-latest
+            platform: linux/arm64
+          - name: macOS
+            os: macos-latest
+    name: install-script (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download snapshot archives
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-archives
+          path: dist
+
+      - name: Set up QEMU
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # Alpine: busybox ash and busybox wget, no curl. The test runs as nobody,
+      # without write access to /usr/local/bin, so the ~/.local/bin case runs too.
+      - name: Test install.sh (alpine)
+        if: matrix.platform != ''
+        run: >-
+          docker run --rm --platform ${{ matrix.platform }} -v "$PWD:/src" -w /src alpine:3.20
+          sh -c 'apk add --no-cache python3 >/dev/null && ! command -v curl && su nobody -s /bin/sh -c "sh scripts/test-install.sh dist"'
+
+      - name: Test install.sh (macOS)
+        if: matrix.platform == ''
+        run: sh scripts/test-install.sh dist
