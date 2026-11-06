@@ -58,7 +58,8 @@ func RequireAbs(agent, path string, vars ...string) (string, error) {
 // A missing file, an empty file, or a missing/null key count as empty. A file
 // that is not valid JSON, whose root is not an object, or whose key is not an
 // object yields an error and the file is left untouched. A new file is
-// created with NewFileMode; an existing file keeps its mode.
+// created with NewFileMode; an existing file keeps its mode. A relative path
+// is an error.
 func UpsertEntries(path, key string, entries map[string]any) error {
 	prev, err := Read(path)
 	if err != nil {
@@ -121,9 +122,13 @@ func Marshal(v any, prefix, indent string) ([]byte, error) {
 }
 
 // Read returns the content of path, or nil when the file does not exist.
+// A relative path is an error.
 // An existing empty file yields a non-nil empty slice, so callers can tell
 // the two apart when passing the result to WriteFile as prev.
 func Read(path string) ([]byte, error) {
+	if err := checkAbs(path); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -137,7 +142,8 @@ func Read(path string) ([]byte, error) {
 	return data, nil
 }
 
-// WriteFile replaces the file at path with data.
+// WriteFile replaces the file at path with data. A relative path is an
+// error.
 //
 // prev is the content the caller read earlier (nil when the file did not
 // exist). If the file no longer matches prev, WriteFile fails instead of
@@ -147,6 +153,9 @@ func Read(path string) ([]byte, error) {
 // directories get NewDirMode. The write goes to a temporary file in the same
 // directory that is then renamed over the target.
 func WriteFile(path string, data, prev []byte) error {
+	if err := checkAbs(path); err != nil {
+		return err
+	}
 	target, err := resolve(path)
 	if err != nil {
 		return err
@@ -179,6 +188,17 @@ func WriteFile(path string, data, prev []byte) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	return atomicWrite(target, data, mode)
+}
+
+// checkAbs refuses a relative path: every agent config lives at an absolute
+// location, so a relative one means its directory was unknown and the file
+// would be read or written in the working directory. Adapters report the
+// missing variable earlier with RequireAbs; this is the last line of defence.
+func checkAbs(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("refusing relative config path %q", path)
+	}
+	return nil
 }
 
 // resolve follows symlinks at path. A path that does not exist yet is

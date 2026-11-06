@@ -270,3 +270,70 @@ func TestRequireAbs(t *testing.T) {
 		}
 	}
 }
+
+// chdir changes the working directory to dir and restores it when the test
+// ends (t.Chdir needs Go 1.24).
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prev); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+}
+
+// assertEmptyDir fails when anything was created in dir.
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("created in the working directory: %s", e.Name())
+	}
+}
+
+const relPath = ".cfg/cfg.json"
+
+func TestUpsertEntries_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	err := jsonfile.UpsertEntries(relPath, "mcpServers", map[string]any{"a": 1})
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("UpsertEntries(%q) error = %v, want \"refusing relative config path\"", relPath, err)
+	}
+	assertEmptyDir(t, cwd)
+}
+
+func TestWriteFile_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	err := jsonfile.WriteFile(relPath, []byte(`{}`), nil)
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("WriteFile(%q) error = %v, want \"refusing relative config path\"", relPath, err)
+	}
+	assertEmptyDir(t, cwd)
+}
+
+func TestRead_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	if err := os.MkdirAll(filepath.Dir(relPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(relPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := jsonfile.Read(relPath)
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("Read(%q) = %q, %v; want \"refusing relative config path\"", relPath, data, err)
+	}
+}
