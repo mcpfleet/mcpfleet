@@ -138,3 +138,48 @@ func TestList_ReadsJSONCSettings(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{"old": "a", "replace-me": "stale"}, commands)
 }
+
+func TestList_ReadsFlatFormat(t *testing.T) {
+	setup(t, `{"context_servers": {"gh": {"command": "npx", "args": ["-y", "gh"], "env": {"K": "v"}}}}`)
+	got, err := zed.New().List()
+	require.NoError(t, err)
+	assert.Equal(t, []schema.Server{{
+		Name:    "gh",
+		Command: "npx",
+		Args:    []string{"-y", "gh"},
+		Env:     map[string]schema.EnvVar{"K": {Value: "v"}},
+	}}, got)
+}
+
+func TestList_ReadsNestedFormat(t *testing.T) {
+	setup(t, `{"context_servers": {"gh": {"command": {"path": "npx", "args": ["-y", "gh"], "env": {"K": "v"}}}}}`)
+	got, err := zed.New().List()
+	require.NoError(t, err)
+	assert.Equal(t, []schema.Server{{
+		Name:    "gh",
+		Command: "npx",
+		Args:    []string{"-y", "gh"},
+		Env:     map[string]schema.EnvVar{"K": {Value: "v"}},
+	}}, got)
+}
+
+func TestList_ReadsMixedFormats(t *testing.T) {
+	setup(t, `// Zed settings
+{
+  "context_servers": {
+    "flat": {"command": "npx", "args": ["-y", "flat"]}, // new format
+    /* old format */
+    "nested": {"command": {"path": "uvx", "args": ["nested"]}},
+    "remote": {"url": "https://example.com/mcp"},
+  },
+}
+`)
+	got, err := zed.New().List()
+	require.NoError(t, err)
+	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
+	assert.Equal(t, []schema.Server{
+		{Name: "flat", Command: "npx", Args: []string{"-y", "flat"}, Env: map[string]schema.EnvVar{}},
+		{Name: "nested", Command: "uvx", Args: []string{"nested"}, Env: map[string]schema.EnvVar{}},
+		{Name: "remote", Transport: schema.TransportHTTP, URL: "https://example.com/mcp", Env: map[string]schema.EnvVar{}},
+	}, got)
+}
