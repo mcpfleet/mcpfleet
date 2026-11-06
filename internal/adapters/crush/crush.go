@@ -27,6 +27,13 @@ type mcpEntry struct {
 	URL     string            `json:"url,omitempty"` // http | sse only
 }
 
+// remoteEntry is the entry Apply writes for a remote (http or sse) server:
+// the transport and its address, with no command, args or env.
+type remoteEntry struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
 // mcpTypeStdio is Crush's type for a server started as a local command.
 const mcpTypeStdio = "stdio"
 
@@ -71,6 +78,13 @@ func (a *Adapter) SupportsTransport(transport string) bool {
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
+		if !a.SupportsTransport(s.Transport) || (s.IsRemote() && s.URL == "") {
+			continue // never write an entry with an empty command
+		}
+		if s.IsRemote() {
+			entries[s.Name] = remoteEntry{Type: s.Transport, URL: s.URL}
+			continue
+		}
 		entry := mcpEntry{
 			Type:    mcpTypeStdio,
 			Command: s.Command,
@@ -83,6 +97,9 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			}
 		}
 		entries[s.Name] = entry
+	}
+	if len(entries) == 0 && len(servers) > 0 {
+		return nil // every server was skipped: leave the file alone
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
