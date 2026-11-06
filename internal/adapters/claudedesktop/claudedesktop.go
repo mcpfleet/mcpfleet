@@ -39,13 +39,23 @@ func (a *Adapter) ConfigPath() string {
 
 // configPath returns claude_desktop_config.json in Claude Desktop's data
 // directory for the given OS, home directory and environment:
-// %APPDATA%\Claude on Windows, ~/Library/Application Support/Claude on macOS,
+// %APPDATA%\Claude on Windows (%USERPROFILE%\AppData\Roaming\Claude when
+// APPDATA is empty), ~/Library/Application Support/Claude on macOS,
 // and $XDG_CONFIG_HOME/Claude (~/.config/Claude when the variable is unset)
 // on Linux and other Unix systems, where Electron puts the app's data.
 func configPath(goos, home string, getenv func(string) string) string {
 	switch goos {
 	case "windows":
-		return filepath.Join(getenv("APPDATA"), "Claude", "claude_desktop_config.json")
+		// Electron resolves appData from the Roaming known folder, not from
+		// the APPDATA variable; its default is %USERPROFILE%\AppData\Roaming,
+		// which os.UserHomeDir returns as home on Windows. A redirected
+		// Roaming folder sets APPDATA, so the fallback only covers an
+		// environment stripped of it.
+		dir := getenv("APPDATA")
+		if dir == "" {
+			dir = filepath.Join(home, "AppData", "Roaming")
+		}
+		return filepath.Join(dir, "Claude", "claude_desktop_config.json")
 	case "darwin":
 		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
 	}
