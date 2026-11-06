@@ -1,6 +1,7 @@
 package windsurf
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,9 +18,18 @@ type windsurfSettings struct {
 }
 
 type mcpEntry struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Command   string            `json:"command"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	ServerURL string            `json:"serverUrl,omitempty"` // remote servers only
+	URL       string            `json:"url,omitempty"`       // accepted as an alias of serverUrl
+}
+
+// remoteEntry is the entry Apply writes for a remote server. Windsurf takes
+// a "serverUrl" in place of "command" and detects the transport (Streamable
+// HTTP or SSE) itself, so the entry carries no type.
+type remoteEntry struct {
+	ServerURL string `json:"serverUrl"`
 }
 
 // Adapter implements adapters.Adapter for Windsurf.
@@ -56,6 +66,13 @@ func (a *Adapter) SupportsTransport(transport string) bool {
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
+		if !a.SupportsTransport(s.Transport) || (s.IsRemote() && s.URL == "") {
+			continue // never write an entry with an empty command
+		}
+		if s.IsRemote() {
+			entries[s.Name] = remoteEntry{ServerURL: s.URL}
+			continue
+		}
 		entry := mcpEntry{
 			Command: s.Command,
 			Args:    s.Args,
@@ -67,6 +84,9 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			}
 		}
 		entries[s.Name] = entry
+	}
+	if len(entries) == 0 && len(servers) > 0 {
+		return nil // every server was skipped: leave the file alone
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
@@ -91,12 +111,19 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		for k, v := range entry.Env {
 			env[k] = schema.EnvVar{Value: v}
 		}
-		servers = append(servers, schema.Server{
+		srv := schema.Server{
 			Name:    name,
 			Command: entry.Command,
 			Args:    entry.Args,
 			Env:     env,
-		})
+		}
+		if u := cmp.Or(entry.ServerURL, entry.URL); u != "" && entry.Command == "" {
+			// A remote entry has no type: report it as http, the
+			// transport the agent tries first.
+			srv.Transport = schema.TransportHTTP
+			srv.URL = u
+		}
+		servers = append(servers, srv)
 	}
 	return servers, nil
 }
