@@ -55,6 +55,17 @@ func (a *Adapter) ConfigPath() string {
 	}
 }
 
+// path is ConfigPath for reading and writing: it refuses a relative path,
+// which an empty APPDATA (Windows) or home directory gives, so the config is
+// never resolved against the working directory.
+func (a *Adapter) path() (string, error) {
+	v := jsonfile.HomeVar(runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		v = "APPDATA"
+	}
+	return jsonfile.RequireAbs(a.Name(), a.ConfigPath(), v)
+}
+
 // SupportsTransport reports whether the config file can hold a server with
 // the given transport: stdio (also the empty transport) and http. Zed has no
 // SSE transport for context servers.
@@ -76,7 +87,10 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	if len(servers) == 0 && given > 0 {
 		return nil // every server was skipped: leave the file alone
 	}
-	cfgPath := a.ConfigPath()
+	cfgPath, err := a.path()
+	if err != nil {
+		return err
+	}
 	prev, err := jsonfile.Read(cfgPath)
 	if err != nil {
 		return fmt.Errorf("zed: %w", err)
@@ -291,7 +305,11 @@ func pointerEscape(s string) string {
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {
-	data, err := os.ReadFile(a.ConfigPath())
+	p, err := a.path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("zed: read config: %w", err)
 	}

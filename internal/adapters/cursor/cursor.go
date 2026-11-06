@@ -47,6 +47,17 @@ func (a *Adapter) ConfigPath() string {
 	}
 }
 
+// path is ConfigPath for reading and writing: it refuses a relative path,
+// which an empty APPDATA (Windows) or home directory gives, so the config is
+// never resolved against the working directory.
+func (a *Adapter) path() (string, error) {
+	v := jsonfile.HomeVar(runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		v = "APPDATA"
+	}
+	return jsonfile.RequireAbs(a.Name(), a.ConfigPath(), v)
+}
+
 // SupportsTransport reports whether the config file can hold a server with
 // the given transport: stdio (also the empty transport), http and sse.
 func (a *Adapter) SupportsTransport(transport string) bool {
@@ -82,16 +93,24 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	if len(entries) == 0 && len(servers) > 0 {
 		return nil // every server was skipped: leave the file alone
 	}
+	p, err := a.path()
+	if err != nil {
+		return err
+	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
+	if err := jsonfile.UpsertEntries(p, "mcpServers", entries); err != nil {
 		return fmt.Errorf("cursor: %w", err)
 	}
 	return nil
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {
-	data, err := os.ReadFile(a.ConfigPath())
+	p, err := a.path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("cursor: read config: %w", err)
 	}

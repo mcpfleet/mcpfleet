@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters"
+	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
@@ -401,4 +403,62 @@ func TestApply_RemoteServersSkippedWithoutWrite(t *testing.T) {
 			t.Errorf("config written although every server was skipped (err=%v):\n%s", err, data)
 		}
 	})
+}
+
+// chdir changes the working directory to dir and restores it when the test
+// ends (t.Chdir needs Go 1.24).
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prev); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+}
+
+// With no home directory every adapter must fail with an error naming the
+// variable to set, instead of resolving its config against the working
+// directory.
+func TestAdapters_RefuseRelativeConfigPath(t *testing.T) {
+	for _, a := range adapters.All() {
+		a := a
+		t.Run(a.Name(), func(t *testing.T) {
+			for _, k := range []string{"HOME", "USERPROFILE", "APPDATA", "XDG_CONFIG_HOME",
+				"CLAUDE_CONFIG_DIR", "CRUSH_GLOBAL_CONFIG", "home"} {
+				t.Setenv(k, "")
+			}
+			cwd := t.TempDir()
+			chdir(t, cwd)
+
+			want := jsonfile.HomeVar(runtime.GOOS)
+			check := func(op string, err error) {
+				t.Helper()
+				if err == nil {
+					t.Errorf("%s returned nil error with no home directory", op)
+					return
+				}
+				if msg := err.Error(); !strings.Contains(msg, "cannot determine config directory") || !strings.Contains(msg, want) {
+					t.Errorf("%s error = %q, want it to say \"cannot determine config directory\" and name %s", op, msg, want)
+				}
+			}
+			check("Apply", a.Apply(newServer))
+			_, err := a.List()
+			check("List", err)
+
+			entries, err := os.ReadDir(cwd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				t.Errorf("created in the working directory: %s", e.Name())
+			}
+		})
+	}
 }

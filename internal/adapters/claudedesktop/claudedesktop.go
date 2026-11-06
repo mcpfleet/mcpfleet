@@ -41,11 +41,7 @@ func (a *Adapter) ConfigPath() string {
 // which an environment without APPDATA, USERPROFILE or HOME would give, so
 // the config is never resolved against the working directory.
 func (a *Adapter) path() (string, error) {
-	p := a.ConfigPath()
-	if !filepath.IsAbs(p) {
-		return "", fmt.Errorf("claude-desktop: cannot determine config directory (set APPDATA or USERPROFILE on Windows, HOME elsewhere)")
-	}
-	return p, nil
+	return jsonfile.RequireAbs(a.Name(), a.ConfigPath(), "APPDATA or USERPROFILE on Windows, HOME elsewhere")
 }
 
 // configPath returns claude_desktop_config.json in Claude Desktop's data

@@ -230,3 +230,110 @@ func TestWriteFile_NoTempLeftovers(t *testing.T) {
 		t.Errorf("dir contents = %v", names)
 	}
 }
+
+func TestHomeVar(t *testing.T) {
+	for goos, want := range map[string]string{
+		"linux":   "HOME",
+		"darwin":  "HOME",
+		"freebsd": "HOME",
+		"windows": "USERPROFILE",
+		"plan9":   "home",
+	} {
+		if got := jsonfile.HomeVar(goos); got != want {
+			t.Errorf("HomeVar(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}
+
+func TestRequireAbs(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "cfg.json")
+	if got, err := jsonfile.RequireAbs("agent", abs, "HOME"); err != nil || got != abs {
+		t.Errorf("RequireAbs(abs) = %q, %v; want %q, nil", got, err, abs)
+	}
+
+	cases := []struct {
+		vars []string
+		want string
+	}{
+		{[]string{"HOME"}, "agent: cannot determine config directory (set HOME)"},
+		{[]string{"HOME", "XDG_CONFIG_HOME"}, "agent: cannot determine config directory (set HOME or XDG_CONFIG_HOME)"},
+		{[]string{"A", "B", "C"}, "agent: cannot determine config directory (set A, B or C)"},
+	}
+	for _, c := range cases {
+		got, err := jsonfile.RequireAbs("agent", filepath.Join(".cfg", "x.json"), c.vars...)
+		if err == nil {
+			t.Errorf("RequireAbs(relative, %v) = %q, nil; want an error", c.vars, got)
+			continue
+		}
+		if err.Error() != c.want {
+			t.Errorf("RequireAbs(relative, %v) error = %q, want %q", c.vars, err, c.want)
+		}
+	}
+}
+
+// chdir changes the working directory to dir and restores it when the test
+// ends (t.Chdir needs Go 1.24).
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prev); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+}
+
+// assertEmptyDir fails when anything was created in dir.
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("created in the working directory: %s", e.Name())
+	}
+}
+
+const relPath = ".cfg/cfg.json"
+
+func TestUpsertEntries_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	err := jsonfile.UpsertEntries(relPath, "mcpServers", map[string]any{"a": 1})
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("UpsertEntries(%q) error = %v, want \"refusing relative config path\"", relPath, err)
+	}
+	assertEmptyDir(t, cwd)
+}
+
+func TestWriteFile_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	err := jsonfile.WriteFile(relPath, []byte(`{}`), nil)
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("WriteFile(%q) error = %v, want \"refusing relative config path\"", relPath, err)
+	}
+	assertEmptyDir(t, cwd)
+}
+
+func TestRead_RefusesRelativePath(t *testing.T) {
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	if err := os.MkdirAll(filepath.Dir(relPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(relPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := jsonfile.Read(relPath)
+	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
+		t.Errorf("Read(%q) = %q, %v; want \"refusing relative config path\"", relPath, data, err)
+	}
+}
