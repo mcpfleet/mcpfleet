@@ -99,6 +99,8 @@ func (a *Adapter) SupportsTransport(transport string) bool {
 // settings.json. The file is JSONC (comments, trailing commas), so it is
 // patched in place on its HuJSON syntax tree: comments, formatting and every
 // other setting survive. An unparsable file is an error and is not written.
+// A local server is written in Zed's flat format ({"command", "args", "env"});
+// a remote one as {"url"}.
 func (a *Adapter) Apply(servers []schema.Server) error {
 	given := len(servers)
 	servers = a.writable(servers)
@@ -147,13 +149,11 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	for _, s := range servers {
 		var entry any = remoteServer{URL: s.URL}
 		if !s.IsRemote() {
-			local := struct {
-				Command contextCommand `json:"command"`
-			}{Command: contextCommand{Path: s.Command, Args: s.Args}}
+			local := localServer{Command: s.Command, Args: s.Args}
 			if len(s.Env) > 0 {
-				local.Command.Env = make(map[string]string, len(s.Env))
+				local.Env = make(map[string]string, len(s.Env))
 				for k, v := range s.Env {
-					local.Command.Env[k] = v.Value
+					local.Env[k] = v.Value
 				}
 			}
 			entry = local
