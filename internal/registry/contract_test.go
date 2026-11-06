@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -17,11 +18,20 @@ import (
 
 // fakeRegistry mimics the mcpfleet-registry server API: it stores request
 // bodies as-is and answers in the ServerOutput shape (lowercase keys plus
-// id/created_at/updated_at, every collection present).
+// id/created_at/updated_at, every field present). Like the registry, it
+// rejects a request key that ServerBody does not declare with a 422.
 type fakeRegistry struct {
 	mu      sync.Mutex
 	bodies  []map[string]any
 	servers []map[string]any
+}
+
+// serverBodyKeys are the JSON keys of ServerBody in mcpfleet-registry
+// (internal/api/routes.go); keep the two lists in sync.
+var serverBodyKeys = map[string]bool{
+	"name": true, "description": true, "transport": true, "install": true,
+	"command": true, "url": true, "args": true, "env": true, "tags": true,
+	"platforms": true,
 }
 
 func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,13 +47,19 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.bodies = append(f.bodies, body)
+		for k := range body {
+			if !serverBodyKeys[k] {
+				http.Error(w, `{"detail":"validation failed","errors":[{"message":"unexpected property","location":"body.`+k+`"}]}`, http.StatusUnprocessableEntity)
+				return
+			}
+		}
 		if _, ok := body["name"].(string); !ok {
 			http.Error(w, `{"detail":"expected required property name"}`, http.StatusUnprocessableEntity)
 			return
 		}
 		out := map[string]any{
 			"id": "0000", "description": "", "transport": "stdio",
-			"install": map[string]any{}, "command": "", "args": []any{},
+			"install": map[string]any{}, "command": "", "url": "", "args": []any{},
 			"env": map[string]any{}, "tags": []any{}, "platforms": []any{},
 			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
 		}
@@ -142,5 +158,50 @@ func TestPushPullRoundTrip_PreservesSecretRefs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got[0], *want) {
 		t.Errorf("round trip changed the server\n got: %+v\nwant: %+v", got[0], *want)
+	}
+}
+
+// TestPushPullRoundTrip_RemoteServer pushes an http server, which has a url
+// and no command, and pulls it back unchanged.
+func TestPushPullRoundTrip_RemoteServer(t *testing.T) {
+	fake := &fakeRegistry{}
+	c := newTestClient(t, fake)
+	ctx := context.Background()
+
+	// The registry returns every collection, empty ones as [] or {}, so a
+	// pulled server has empty (not nil) collections.
+	want := &schema.Server{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
+		Args: []string{}, Env: map[string]schema.EnvVar{}, Tags: []string{}, Platforms: []string{}}
+	if _, err := c.CreateServer(ctx, want); err != nil {
+		t.Fatalf("CreateServer: %v", err)
+	}
+	if got := fake.bodies[0]["url"]; got != want.URL {
+		t.Errorf("request body url = %v, want %q", got, want.URL)
+	}
+	got, err := c.ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d servers, want 1", len(got))
+	}
+	if !reflect.DeepEqual(got[0], *want) {
+		t.Errorf("round trip changed the server\n got: %+v\nwant: %+v", got[0], *want)
+	}
+}
+
+// TestFakeRegistry_RejectsUnknownKey keeps the fake as strict as the
+// registry, so a key the registry does not know fails here too.
+func TestFakeRegistry_RejectsUnknownKey(t *testing.T) {
+	ts := httptest.NewServer(&fakeRegistry{})
+	defer ts.Close()
+	resp, err := http.Post(ts.URL+"/v1/servers", "application/json",
+		strings.NewReader(`{"name":"x","headers":{"A":"b"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want 422", resp.StatusCode)
 	}
 }
