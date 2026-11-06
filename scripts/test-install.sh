@@ -48,7 +48,7 @@ python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$srv" >"$work/server.l
 server_pid=$!
 port=
 i=0
-while [ $i -lt 50 ]; do
+while [ $i -lt 300 ]; do # up to 30s: python starts slowly under QEMU
   port=$(sed -n 's/.* port \([0-9][0-9]*\).*/\1/p' "$work/server.log" | head -n 1)
   [ -z "$port" ] || break
   sleep 0.1
