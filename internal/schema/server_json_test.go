@@ -33,7 +33,7 @@ func TestServer_JSONKeys(t *testing.T) {
 			t.Errorf("missing key %q in %s", k, b)
 		}
 	}
-	for _, k := range []string{"Name", "description", "url", "URL", "args", "tags", "platforms"} {
+	for _, k := range []string{"Name", "description", "url", "URL", "args", "headers", "Headers", "tags", "platforms"} {
 		if _, ok := got[k]; ok {
 			t.Errorf("unexpected key %q in %s", k, b)
 		}
@@ -96,5 +96,40 @@ func TestServer_IsRemote(t *testing.T) {
 		if got := (Server{Transport: transport}).IsRemote(); got != want {
 			t.Errorf("Server{Transport: %q}.IsRemote() = %v, want %v", transport, got, want)
 		}
+	}
+}
+
+// TestServer_JSONHeaders pins the key and shape of a remote server's HTTP
+// headers: the same {value}/{secret} objects as env.
+func TestServer_JSONHeaders(t *testing.T) {
+	srv := Server{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
+		Headers: map[string]EnvVar{
+			"Authorization": {Secret: "example_auth"},
+			"X-Client":      {Value: "mcpfleet"},
+		}}
+	b, err := json.Marshal(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Headers map[string]map[string]string `json:"headers"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]string{
+		"Authorization": {"secret": "example_auth"},
+		"X-Client":      {"value": "mcpfleet"},
+	}
+	if len(got.Headers) != 2 || got.Headers["Authorization"]["secret"] != "example_auth" ||
+		len(got.Headers["Authorization"]) != 1 || got.Headers["X-Client"]["value"] != "mcpfleet" || len(got.Headers["X-Client"]) != 1 {
+		t.Errorf("headers = %v, want %v (%s)", got.Headers, want, b)
+	}
+	var back Server
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Headers["Authorization"] != (EnvVar{Secret: "example_auth"}) || back.Headers["X-Client"] != (EnvVar{Value: "mcpfleet"}) {
+		t.Errorf("decoded headers = %v", back.Headers)
 	}
 }
