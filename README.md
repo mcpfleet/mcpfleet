@@ -82,7 +82,7 @@ mcpfleet --version
 
 ## Quick start
 
-Describe your MCP servers in a YAML file. The file is a list of server definitions; only `name` is required:
+Describe your MCP servers in a YAML file. The file is a list of server definitions. Each needs a `name`, plus a `command` for a local (`stdio`) server or a `url` for a remote (`sse`, `http`) one:
 
 ```yaml
 # servers.yaml
