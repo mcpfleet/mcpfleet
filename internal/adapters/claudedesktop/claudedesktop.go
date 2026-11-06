@@ -43,7 +43,7 @@ func (a *Adapter) ConfigPath() string {
 func (a *Adapter) path() (string, error) {
 	p := a.ConfigPath()
 	if !filepath.IsAbs(p) {
-		return "", fmt.Errorf("claude-desktop: cannot determine config directory (set APPDATA or USERPROFILE)")
+		return "", fmt.Errorf("claude-desktop: cannot determine config directory (set APPDATA or USERPROFILE on Windows, HOME elsewhere)")
 	}
 	return p, nil
 }
