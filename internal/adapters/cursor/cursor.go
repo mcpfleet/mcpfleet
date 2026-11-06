@@ -39,6 +39,16 @@ func (a *Adapter) ConfigPath() string {
 	}
 }
 
+// SupportsTransport reports whether the config file can hold a server with
+// the given transport: stdio (also the empty transport), http and sse.
+func (a *Adapter) SupportsTransport(transport string) bool {
+	switch transport {
+	case "", schema.TransportStdio, schema.TransportHTTP, schema.TransportSSE:
+		return true
+	}
+	return false
+}
+
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {

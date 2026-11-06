@@ -48,6 +48,17 @@ func (a *Adapter) ConfigPath() string {
 	}
 }
 
+// SupportsTransport reports whether the config file can hold a server with
+// the given transport: stdio (also the empty transport) and http. Zed has no
+// SSE transport for context servers.
+func (a *Adapter) SupportsTransport(transport string) bool {
+	switch transport {
+	case "", schema.TransportStdio, schema.TransportHTTP:
+		return true
+	}
+	return false
+}
+
 // Apply adds or replaces the given servers under "context_servers" in Zed's
 // settings.json. The file is JSONC (comments, trailing commas), so it is
 // patched in place on its HuJSON syntax tree: comments, formatting and every

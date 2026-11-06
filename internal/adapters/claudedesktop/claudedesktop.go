@@ -77,6 +77,13 @@ func configPath(goos, home string, getenv func(string) string) string {
 	return filepath.Join(dir, "Claude", "claude_desktop_config.json")
 }
 
+// SupportsTransport reports whether the config file can hold a server with
+// the given transport. claude_desktop_config.json holds local (stdio) servers
+// only; Claude Desktop adds remote servers in Settings → Connectors instead.
+func (a *Adapter) SupportsTransport(transport string) bool {
+	return transport == "" || transport == schema.TransportStdio
+}
+
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
