@@ -178,7 +178,8 @@ func TestList_MapsRemoteServers(t *testing.T) {
 	require.NoError(t, err)
 	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
 	assert.Equal(t, []schema.Server{
-		{Name: "by-server-url", Transport: "http", URL: "https://a.example/mcp", Env: map[string]schema.EnvVar{}},
+		{Name: "by-server-url", Transport: "http", URL: "https://a.example/mcp", Env: map[string]schema.EnvVar{},
+			Headers: map[string]schema.EnvVar{"X": {Value: "y"}}},
 		{Name: "by-url", Transport: "http", URL: "https://b.example/sse", Env: map[string]schema.EnvVar{}},
 	}, got)
 }

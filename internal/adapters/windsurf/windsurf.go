@@ -23,13 +23,18 @@ type mcpEntry struct {
 	Env       map[string]string `json:"env,omitempty"`
 	ServerURL string            `json:"serverUrl,omitempty"` // remote servers only
 	URL       string            `json:"url,omitempty"`       // accepted as an alias of serverUrl
+	Headers   map[string]string `json:"headers,omitempty"`   // remote servers only
 }
 
 // remoteEntry is the entry Apply writes for a remote server. Windsurf takes
 // a "serverUrl" in place of "command" and detects the transport (Streamable
-// HTTP or SSE) itself, so the entry carries no type.
+// HTTP or SSE) itself, so the entry carries no type. HTTP headers go in a
+// "headers" object next to "serverUrl"
+// (https://docs.windsurf.com/windsurf/cascade/mcp); Windsurf expands
+// ${env:NAME} in their values.
 type remoteEntry struct {
-	ServerURL string `json:"serverUrl"`
+	ServerURL string            `json:"serverUrl"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // Adapter implements adapters.Adapter for Windsurf.
@@ -77,7 +82,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			continue // never write an entry with an empty command
 		}
 		if s.IsRemote() {
-			entries[s.Name] = remoteEntry{ServerURL: s.URL}
+			entries[s.Name] = remoteEntry{ServerURL: s.URL, Headers: schema.Values(s.Headers)}
 			continue
 		}
 		entry := mcpEntry{
@@ -133,6 +138,7 @@ func (a *Adapter) List() ([]schema.Server, error) {
 			Env:     env,
 		}
 		if u := cmp.Or(entry.ServerURL, entry.URL); u != "" && entry.Command == "" {
+			srv.Headers = schema.Literals(entry.Headers)
 			// A remote entry has no type: report it as http, the
 			// transport the agent tries first.
 			srv.Transport = schema.TransportHTTP
