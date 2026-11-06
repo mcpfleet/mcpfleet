@@ -84,3 +84,17 @@ func TestManifest_JSONKeys(t *testing.T) {
 		t.Errorf("manifest JSON = %s, want lowercase version/servers", b)
 	}
 }
+
+func TestServer_IsRemote(t *testing.T) {
+	cases := map[string]bool{
+		"":      false,
+		"stdio": false,
+		"http":  true,
+		"sse":   true,
+	}
+	for transport, want := range cases {
+		if got := (Server{Transport: transport}).IsRemote(); got != want {
+			t.Errorf("Server{Transport: %q}.IsRemote() = %v, want %v", transport, got, want)
+		}
+	}
+}

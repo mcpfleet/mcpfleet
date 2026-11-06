@@ -164,3 +164,21 @@ func TestApply_PreservesOtherKeys(t *testing.T) {
 	assert.Equal(t, map[string]any{"command": "keep", "disabled": true}, servers(t, a)["manual"])
 	assert.Equal(t, map[string]any{"command": "run"}, servers(t, a)["new"])
 }
+
+func TestList_MapsRemoteServers(t *testing.T) {
+	isolate(t)
+	a := windsurf.New()
+	require.NoError(t, os.MkdirAll(filepath.Dir(a.ConfigPath()), 0o755))
+	require.NoError(t, os.WriteFile(a.ConfigPath(), []byte(`{"mcpServers":{
+		"by-server-url":{"serverUrl":"https://a.example/mcp","headers":{"X":"y"}},
+		"by-url":{"url":"https://b.example/sse"}
+	}}`), 0o644))
+
+	got, err := a.List()
+	require.NoError(t, err)
+	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
+	assert.Equal(t, []schema.Server{
+		{Name: "by-server-url", Transport: "http", URL: "https://a.example/mcp", Env: map[string]schema.EnvVar{}},
+		{Name: "by-url", Transport: "http", URL: "https://b.example/sse", Env: map[string]schema.EnvVar{}},
+	}, got)
+}

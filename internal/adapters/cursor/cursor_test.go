@@ -87,3 +87,23 @@ func TestAdapter_Apply_MergesExisting(t *testing.T) {
 		t.Error("server-b missing after second apply")
 	}
 }
+
+func TestAdapter_List_MapsRemoteServers(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("APPDATA", tmp)
+	a := cursor.New()
+	if err := os.MkdirAll(filepath.Dir(a.ConfigPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a.ConfigPath(), []byte(`{"mcpServers":{"remote":{"url":"https://a.example/mcp","headers":{"X":"y"}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].Transport != "http" || got[0].URL != "https://a.example/mcp" || got[0].Command != "" {
+		t.Errorf("List = %+v, want one http server at https://a.example/mcp", got)
+	}
+}

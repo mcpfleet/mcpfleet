@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -275,6 +276,129 @@ func TestApply_ExistingFileKeepsMode(t *testing.T) {
 			if got := st.Mode().Perm(); got != 0o644 {
 				t.Errorf("%s mode = %v, want 0644 (kept)", filepath.Base(p), got)
 			}
+		}
+	})
+}
+
+// remoteEntry is the entry each adapter writes for a remote server with the
+// given transport and URL, or nil when the adapter skips that transport.
+var remoteEntry = map[string]func(transport, url string) map[string]any{
+	"claude-code": func(tr, u string) map[string]any { return map[string]any{"type": tr, "url": u} },
+	"crush":       func(tr, u string) map[string]any { return map[string]any{"type": tr, "url": u} },
+	"cursor":      func(_, u string) map[string]any { return map[string]any{"url": u} },
+	"windsurf":    func(_, u string) map[string]any { return map[string]any{"serverUrl": u} },
+	"zed": func(tr, u string) map[string]any {
+		if tr != "http" {
+			return nil // Zed has no SSE transport
+		}
+		return map[string]any{"url": u}
+	},
+	"claude-desktop": func(string, string) map[string]any { return nil },
+}
+
+// listTransport is the transport List reports for a remote entry the
+// adapter wrote: adapters whose entry has no type field read it back as http.
+var listTransport = map[string]func(transport string) string{
+	"claude-code":    func(tr string) string { return tr },
+	"crush":          func(tr string) string { return tr },
+	"cursor":         func(string) string { return "http" },
+	"windsurf":       func(string) string { return "http" },
+	"zed":            func(tr string) string { return tr },
+	"claude-desktop": func(tr string) string { return tr },
+}
+
+var remoteServers = []schema.Server{
+	{Name: "local", Command: "npx", Args: []string{"-y", "pkg"}},
+	{Name: "remote-http", Transport: "http", URL: "https://example.com/mcp",
+		Env: map[string]schema.EnvVar{"IGNORED": {Value: "x"}}},
+	{Name: "remote-sse", Transport: "sse", URL: "https://example.com/sse"},
+}
+
+func TestApply_RemoteServersEntryShape(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		// remote-http replaces a stdio entry of the same name.
+		writeConfig(t, path, `{"`+key+`":{"other":{"command":"keep"},"remote-http":{"command":"old","args":["a"]}}}`, 0o644)
+
+		if err := a.Apply(remoteServers); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		entries, _ := readJSON(t, path)[key].(map[string]any)
+		if _, ok := entries["local"]; !ok {
+			t.Errorf("stdio server not written: %v", entries)
+		}
+		if _, ok := entries["other"]; !ok {
+			t.Errorf("unrelated entry lost: %v", entries)
+		}
+		for _, s := range remoteServers[1:] {
+			want := remoteEntry[a.Name()](s.Transport, s.URL)
+			got, written := entries[s.Name]
+			if want == nil {
+				if s.Name == "remote-http" {
+					// Skipped: the previous entry stays as it was.
+					if e, _ := got.(map[string]any); e["command"] != "old" {
+						t.Errorf("%s: skipped server changed the existing entry: %v", s.Name, got)
+					}
+				} else if written {
+					t.Errorf("%s: unsupported transport %s written: %v", s.Name, s.Transport, got)
+				}
+				continue
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("%s entry = %v, want %v", s.Name, got, want)
+			}
+		}
+	})
+}
+
+func TestApply_RemoteServersListRoundTrip(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		if err := a.Apply(remoteServers); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		listed, err := a.List()
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		got := map[string]schema.Server{}
+		for _, s := range listed {
+			got[s.Name] = s
+		}
+		for _, s := range remoteServers[1:] {
+			if remoteEntry[a.Name()](s.Transport, s.URL) == nil {
+				if _, ok := got[s.Name]; ok {
+					t.Errorf("%s: listed although skipped", s.Name)
+				}
+				continue
+			}
+			l, ok := got[s.Name]
+			if !ok {
+				t.Errorf("%s: not listed", s.Name)
+				continue
+			}
+			if want := listTransport[a.Name()](s.Transport); l.Transport != want || l.URL != s.URL || l.Command != "" {
+				t.Errorf("%s listed as transport=%q url=%q command=%q, want transport=%q url=%q command=\"\"",
+					s.Name, l.Transport, l.URL, l.Command, want, s.URL)
+			}
+		}
+	})
+}
+
+func TestApply_RemoteServersSkippedWithoutWrite(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		skipped := []schema.Server{{Name: "no-url", Transport: "http"}}
+		for _, tr := range []string{"http", "sse"} {
+			if !a.SupportsTransport(tr) {
+				skipped = append(skipped, schema.Server{Name: "remote-" + tr, Transport: tr, URL: "https://example.com/" + tr})
+			}
+		}
+		path := a.ConfigPath()
+		if err := a.Apply(skipped); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			data, _ := os.ReadFile(path)
+			t.Errorf("config written although every server was skipped (err=%v):\n%s", err, data)
 		}
 	})
 }

@@ -20,6 +20,14 @@ type mcpEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"` // remote servers only
+}
+
+// remoteEntry is the entry Apply writes for a remote server. Cursor takes a
+// "url" in place of "command" and detects the transport (Streamable HTTP or
+// SSE) itself, so the entry carries no type.
+type remoteEntry struct {
+	URL string `json:"url"`
 }
 
 // Adapter implements adapters.Adapter for Cursor.
@@ -39,9 +47,26 @@ func (a *Adapter) ConfigPath() string {
 	}
 }
 
+// SupportsTransport reports whether the config file can hold a server with
+// the given transport: stdio (also the empty transport), http and sse.
+func (a *Adapter) SupportsTransport(transport string) bool {
+	switch transport {
+	case "", schema.TransportStdio, schema.TransportHTTP, schema.TransportSSE:
+		return true
+	}
+	return false
+}
+
 func (a *Adapter) Apply(servers []schema.Server) error {
 	entries := make(map[string]any, len(servers))
 	for _, s := range servers {
+		if !a.SupportsTransport(s.Transport) || (s.IsRemote() && s.URL == "") {
+			continue // never write an entry with an empty command
+		}
+		if s.IsRemote() {
+			entries[s.Name] = remoteEntry{URL: s.URL}
+			continue
+		}
 		entry := mcpEntry{
 			Command: s.Command,
 			Args:    s.Args,
@@ -53,6 +78,9 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			}
 		}
 		entries[s.Name] = entry
+	}
+	if len(entries) == 0 && len(servers) > 0 {
+		return nil // every server was skipped: leave the file alone
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
@@ -77,12 +105,19 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		for k, v := range entry.Env {
 			env[k] = schema.EnvVar{Value: v}
 		}
-		servers = append(servers, schema.Server{
+		srv := schema.Server{
 			Name:    name,
 			Command: entry.Command,
 			Args:    entry.Args,
 			Env:     env,
-		})
+		}
+		if u := entry.URL; u != "" && entry.Command == "" {
+			// A remote entry has no type: report it as http, the
+			// transport the agent tries first.
+			srv.Transport = schema.TransportHTTP
+			srv.URL = u
+		}
+		servers = append(servers, srv)
 	}
 	return servers, nil
 }

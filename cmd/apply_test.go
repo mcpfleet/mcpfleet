@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mcpfleet/mcpfleet/internal/adapters"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 	"github.com/mcpfleet/mcpfleet/internal/vault"
 )
@@ -189,4 +190,97 @@ func TestApplyHelp_HasNoAllFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "--tag")
 	assert.NotContains(t, out, "--all")
+}
+
+// isolateAgentConfigs points the agent config locations that HOME alone
+// does not cover at the test's home.
+func isolateAgentConfigs(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CRUSH_GLOBAL_CONFIG", "")
+}
+
+func readMcpServers(t *testing.T, path string) map[string]map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg struct {
+		McpServers map[string]map[string]any `json:"mcpServers"`
+	}
+	require.NoError(t, json.Unmarshal(data, &cfg), "config is not valid JSON:\n%s", data)
+	return cfg.McpServers
+}
+
+func TestApply_RemoteServerSkippedWithWarning(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "fs", Command: "npx"},
+		// The secret is missing from the vault: a skipped server must not
+		// stop apply.
+		{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
+			Env: map[string]schema.EnvVar{"TOKEN": {Secret: "absent"}}},
+	})
+	isolateAgentConfigs(t, home)
+
+	out, errOut, err := runRootIO(t, nil, "apply", "claude-desktop")
+	require.NoError(t, err)
+	assert.Equal(t, "warning: skipping remote: claude-desktop does not support http servers in its config file\n", errOut)
+	assert.Contains(t, out, "Applied 1 MCP server(s) to claude-desktop")
+
+	a, err := adapters.Get("claude-desktop")
+	require.NoError(t, err)
+	entries := readMcpServers(t, a.ConfigPath())
+	assert.Contains(t, entries, "fs")
+	assert.NotContains(t, entries, "remote")
+}
+
+func TestApply_RemoteServerOnlySkippedWritesNothing(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "remote", Transport: "sse", URL: "https://example.com/sse"},
+	})
+	isolateAgentConfigs(t, home)
+
+	out, errOut, err := runRootIO(t, nil, "apply", "claude-desktop")
+	require.NoError(t, err)
+	assert.Contains(t, errOut, "warning: skipping remote: claude-desktop does not support sse servers in its config file")
+	assert.Contains(t, out, "Applied 0 MCP server(s) to claude-desktop")
+
+	a, err := adapters.Get("claude-desktop")
+	require.NoError(t, err)
+	_, statErr := os.Stat(a.ConfigPath())
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "agent config must not be written: %v", statErr)
+}
+
+func TestApply_RemoteServerWithoutURLSkipped(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "fs", Command: "npx"},
+		{Name: "broken", Transport: "http"},
+	})
+	isolateAgentConfigs(t, home)
+
+	out, errOut, err := runRootIO(t, nil, "apply", "claude-code")
+	require.NoError(t, err)
+	assert.Equal(t, "warning: skipping broken: server has transport http but no url\n", errOut)
+	assert.Contains(t, out, "Applied 1 MCP server(s) to claude-code")
+
+	a, err := adapters.Get("claude-code")
+	require.NoError(t, err)
+	assert.NotContains(t, readMcpServers(t, a.ConfigPath()), "broken")
+}
+
+func TestApply_RemoteServerWrittenForClaudeCode(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "remote", Transport: "http", URL: "https://example.com/mcp"},
+	})
+	isolateAgentConfigs(t, home)
+
+	out, errOut, err := runRootIO(t, nil, "apply", "claude-code")
+	require.NoError(t, err)
+	assert.Empty(t, errOut)
+	assert.Contains(t, out, "Applied 1 MCP server(s) to claude-code")
+
+	a, err := adapters.Get("claude-code")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"type": "http", "url": "https://example.com/mcp"},
+		readMcpServers(t, a.ConfigPath())["remote"])
 }
