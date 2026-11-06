@@ -56,12 +56,12 @@ func TestApply_EntryShape(t *testing.T) {
 		Env:     map[string]schema.EnvVar{"K": {Value: "v"}},
 	}}))
 
+	// Zed's flat stdio entry: "command" is the executable, args and env
+	// sit beside it.
 	assert.Equal(t, map[string]any{
-		"command": map[string]any{
-			"path": "npx",
-			"args": []any{"-y", "pkg"},
-			"env":  map[string]any{"K": "v"},
-		},
+		"command": "npx",
+		"args":    []any{"-y", "pkg"},
+		"env":     map[string]any{"K": "v"},
 	}, contextServers(t, a.ConfigPath())["my-server"])
 }
 
@@ -69,7 +69,7 @@ func TestApply_OmitsEmptyArgsAndEnv(t *testing.T) {
 	isolateHome(t)
 	a := zed.New()
 	require.NoError(t, a.Apply([]schema.Server{{Name: "bare", Command: "run"}}))
-	assert.Equal(t, map[string]any{"command": map[string]any{"path": "run"}},
+	assert.Equal(t, map[string]any{"command": "run"},
 		contextServers(t, a.ConfigPath())["bare"])
 }
 
