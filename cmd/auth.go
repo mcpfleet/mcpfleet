@@ -81,7 +81,7 @@ MCPFLEET_REGISTRY_URL is set.`,
 				}
 			}
 
-			fmt.Println("✓ Logged in successfully!")
+			fmt.Fprintln(cmd.OutOrStdout(), "✓ Logged in successfully!")
 			return nil
 		},
 	}
@@ -112,12 +112,12 @@ func newAuthLogoutCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := registry.DeleteToken(); err != nil {
 				if os.IsNotExist(err) {
-					fmt.Println("Not logged in.")
+					fmt.Fprintln(cmd.OutOrStdout(), "Not logged in.")
 					return nil
 				}
 				return fmt.Errorf("logout: %w", err)
 			}
-			fmt.Println("✓ Logged out.")
+			fmt.Fprintln(cmd.OutOrStdout(), "✓ Logged out.")
 			return nil
 		},
 	}

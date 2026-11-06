@@ -81,3 +81,29 @@ func TestList_MissingConfigIsError(t *testing.T) {
 	_, err := New().List()
 	assert.Error(t, err)
 }
+
+// TestApply_RefusesRelativeConfigPath pins that without any home or config
+// directory in the environment Apply and List fail instead of resolving the
+// config file against the working directory.
+func TestApply_RefusesRelativeConfigPath(t *testing.T) {
+	for _, k := range []string{"HOME", "USERPROFILE", "APPDATA", "XDG_CONFIG_HOME", "home"} {
+		t.Setenv(k, "")
+	}
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	err = New().Apply([]schema.Server{{Name: "fs", Command: "npx"}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot determine config directory")
+
+	_, err = New().List()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot determine config directory")
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing may be written into the working directory")
+}

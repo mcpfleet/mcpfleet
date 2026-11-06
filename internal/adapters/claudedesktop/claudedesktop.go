@@ -37,15 +37,36 @@ func (a *Adapter) ConfigPath() string {
 	return configPath(runtime.GOOS, home, os.Getenv)
 }
 
+// path is ConfigPath for reading and writing: it refuses a relative path,
+// which an environment without APPDATA, USERPROFILE or HOME would give, so
+// the config is never resolved against the working directory.
+func (a *Adapter) path() (string, error) {
+	p := a.ConfigPath()
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("claude-desktop: cannot determine config directory (set APPDATA or USERPROFILE on Windows, HOME elsewhere)")
+	}
+	return p, nil
+}
+
 // configPath returns claude_desktop_config.json in Claude Desktop's data
 // directory for the given OS, home directory and environment:
-// %APPDATA%\Claude on Windows, ~/Library/Application Support/Claude on macOS,
+// %APPDATA%\Claude on Windows (%USERPROFILE%\AppData\Roaming\Claude when
+// APPDATA is empty), ~/Library/Application Support/Claude on macOS,
 // and $XDG_CONFIG_HOME/Claude (~/.config/Claude when the variable is unset)
 // on Linux and other Unix systems, where Electron puts the app's data.
 func configPath(goos, home string, getenv func(string) string) string {
 	switch goos {
 	case "windows":
-		return filepath.Join(getenv("APPDATA"), "Claude", "claude_desktop_config.json")
+		// Electron resolves appData from the Roaming known folder, not from
+		// the APPDATA variable; its default is %USERPROFILE%\AppData\Roaming,
+		// which os.UserHomeDir returns as home on Windows. A redirected
+		// Roaming folder sets APPDATA, so the fallback only covers an
+		// environment stripped of it.
+		dir := getenv("APPDATA")
+		if dir == "" {
+			dir = filepath.Join(home, "AppData", "Roaming")
+		}
+		return filepath.Join(dir, "Claude", "claude_desktop_config.json")
 	case "darwin":
 		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
 	}
@@ -71,16 +92,24 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		}
 		entries[s.Name] = entry
 	}
+	path, err := a.path()
+	if err != nil {
+		return err
+	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", entries); err != nil {
 		return fmt.Errorf("claude-desktop: %w", err)
 	}
 	return nil
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {
-	data, err := os.ReadFile(a.ConfigPath())
+	path, err := a.path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("claude-desktop: read config: %w", err)
 	}

@@ -27,6 +27,7 @@ func TestConfigPath_PerGOOS(t *testing.T) {
 		{"freebsd", "freebsd", "/home/u", noXDG, "/home/u/.config/Claude/claude_desktop_config.json"},
 		{"darwin", "darwin", "/Users/u", withXDG, "/Users/u/Library/Application Support/Claude/claude_desktop_config.json"},
 		{"windows", "windows", "/c/Users/u", withXDG, "/appdata/Claude/claude_desktop_config.json"},
+		{"windows empty APPDATA", "windows", "/c/Users/u", env(nil), "/c/Users/u/AppData/Roaming/Claude/claude_desktop_config.json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := configPath(tc.goos, filepath.FromSlash(tc.home), tc.getenv)

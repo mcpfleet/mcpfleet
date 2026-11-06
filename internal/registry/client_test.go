@@ -20,7 +20,9 @@ import (
 // recorded is one request seen by recorder.
 type recorded struct {
 	method, path, auth, accept, contentType string
-	body                                    []byte
+	// escapedPath and query are the path and query as sent on the wire.
+	escapedPath, query string
+	body               []byte
 }
 
 // recorder records every request and answers with a fixed status and body.
@@ -39,6 +41,8 @@ func (r *recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.reqs = append(r.reqs, recorded{
 		method:      req.Method,
 		path:        req.URL.Path,
+		escapedPath: req.URL.EscapedPath(),
+		query:       req.URL.RawQuery,
 		auth:        req.Header.Get("Authorization"),
 		accept:      req.Header.Get("Accept"),
 		contentType: req.Header.Get("Content-Type"),
@@ -361,4 +365,42 @@ func TestNew_BaseURLPrecedence(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "https://env.example", c.baseURL)
 	})
+}
+
+// TestServerPaths_EscapeName pins that a server name is one escaped path
+// segment: "/", " ", "?" and "#" must not split the path, start a query or
+// cut the URL at a fragment.
+func TestServerPaths_EscapeName(t *testing.T) {
+	calls := map[string]func(c *Client, id string) error{
+		http.MethodGet: func(c *Client, id string) error {
+			_, err := c.GetServer(context.Background(), id)
+			return err
+		},
+		http.MethodPut: func(c *Client, id string) error {
+			_, err := c.UpdateServer(context.Background(), id, &schema.Server{Name: id})
+			return err
+		},
+		http.MethodDelete: func(c *Client, id string) error {
+			return c.DeleteServer(context.Background(), id)
+		},
+	}
+	names := []struct{ name, wantPath, wantEscaped string }{
+		{"a/b c?d", "/v1/servers/a/b c?d", "/v1/servers/a%2Fb%20c%3Fd"},
+		{"a#b", "/v1/servers/a#b", "/v1/servers/a%23b"},
+	}
+	for method, call := range calls {
+		for _, n := range names {
+			t.Run(method+" "+n.name, func(t *testing.T) {
+				rec := &recorder{body: serverJSON}
+				c := newTestClient(t, rec)
+				require.NoError(t, call(c, n.name))
+
+				r := rec.last(t)
+				assert.Equal(t, method, r.method)
+				assert.Equal(t, n.wantEscaped, r.escapedPath)
+				assert.Equal(t, n.wantPath, r.path)
+				assert.Empty(t, r.query)
+			})
+		}
+	}
 }
