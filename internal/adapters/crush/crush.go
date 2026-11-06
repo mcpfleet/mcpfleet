@@ -109,12 +109,12 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	if len(entries) == 0 && len(servers) > 0 {
 		return nil // every server was skipped: leave the file alone
 	}
-	// Merge into the existing file: only the entries named above change;
-	// other keys and servers are kept, and an unparsable file is an error.
 	p, err := a.path()
 	if err != nil {
 		return err
 	}
+	// Merge into the existing file: only the entries named above change;
+	// other keys and servers are kept, and an unparsable file is an error.
 	if err := jsonfile.UpsertEntries(p, "mcp", entries); err != nil {
 		return fmt.Errorf("crush: %w", err)
 	}
