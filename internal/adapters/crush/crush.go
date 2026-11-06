@@ -24,14 +24,19 @@ type mcpEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
-	URL     string            `json:"url,omitempty"` // http | sse only
+	URL     string            `json:"url,omitempty"`     // http | sse only
+	Headers map[string]string `json:"headers,omitempty"` // http | sse only
 }
 
 // remoteEntry is the entry Apply writes for a remote (http or sse) server:
-// the transport and its address, with no command, args or env.
+// the transport, its address and the HTTP headers, with no command, args or
+// env. Crush reads "headers" for http and sse servers (MCPConfig.Headers in
+// internal/config/config.go of charmbracelet/crush) and runs their values
+// through shell expansion, so $VAR and $(cmd) are expanded.
 type remoteEntry struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // mcpTypeStdio is Crush's type for a server started as a local command.
@@ -90,7 +95,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			continue // never write an entry with an empty command
 		}
 		if s.IsRemote() {
-			entries[s.Name] = remoteEntry{Type: s.Transport, URL: s.URL}
+			entries[s.Name] = remoteEntry{Type: s.Transport, URL: s.URL, Headers: schema.Values(s.Headers)}
 			continue
 		}
 		entry := mcpEntry{
@@ -144,6 +149,7 @@ func (a *Adapter) List() ([]schema.Server, error) {
 			Name:      name,
 			Transport: cmp.Or(entry.Type, "stdio"),
 			URL:       entry.URL,
+			Headers:   schema.Literals(entry.Headers),
 			Command:   entry.Command,
 			Args:      entry.Args,
 			Env:       env,
