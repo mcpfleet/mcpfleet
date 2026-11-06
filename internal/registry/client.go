@@ -69,16 +69,36 @@ func (e *APIError) Is(target error) bool {
 	return false
 }
 
-// readDetail returns the "detail" field of a problem+json error body, or ""
-// when the body is empty or not JSON.
+// readDetail returns the "detail" field of a problem+json error body
+// followed by its errors[] entries ("location: message", joined by "; "),
+// or "" when the body is empty or not JSON.
 func readDetail(r io.Reader) string {
 	var p struct {
 		Detail string `json:"detail"`
+		Errors []struct {
+			Location string `json:"location"`
+			Message  string `json:"message"`
+		} `json:"errors"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r, maxErrorBody)).Decode(&p); err != nil {
 		return ""
 	}
-	return p.Detail
+	var entries []string
+	for _, e := range p.Errors {
+		switch {
+		case e.Location != "" && e.Message != "":
+			entries = append(entries, e.Location+": "+e.Message)
+		case e.Message != "":
+			entries = append(entries, e.Message)
+		}
+	}
+	if len(entries) == 0 {
+		return p.Detail
+	}
+	if p.Detail == "" {
+		return strings.Join(entries, "; ")
+	}
+	return p.Detail + ": " + strings.Join(entries, "; ")
 }
 
 // URLSource names where the effective registry URL came from.
