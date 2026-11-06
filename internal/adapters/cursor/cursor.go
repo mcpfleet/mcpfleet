@@ -20,14 +20,18 @@ type mcpEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
-	URL     string            `json:"url,omitempty"` // remote servers only
+	URL     string            `json:"url,omitempty"`     // remote servers only
+	Headers map[string]string `json:"headers,omitempty"` // remote servers only
 }
 
 // remoteEntry is the entry Apply writes for a remote server. Cursor takes a
 // "url" in place of "command" and detects the transport (Streamable HTTP or
-// SSE) itself, so the entry carries no type.
+// SSE) itself, so the entry carries no type. HTTP headers go in a "headers"
+// object next to "url" (https://cursor.com/docs/context/mcp); Cursor
+// expands ${env:NAME} in their values.
 type remoteEntry struct {
-	URL string `json:"url"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // Adapter implements adapters.Adapter for Cursor.
@@ -75,7 +79,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 			continue // never write an entry with an empty command
 		}
 		if s.IsRemote() {
-			entries[s.Name] = remoteEntry{URL: s.URL}
+			entries[s.Name] = remoteEntry{URL: s.URL, Headers: schema.Values(s.Headers)}
 			continue
 		}
 		entry := mcpEntry{
@@ -131,6 +135,7 @@ func (a *Adapter) List() ([]schema.Server, error) {
 			Env:     env,
 		}
 		if u := entry.URL; u != "" && entry.Command == "" {
+			srv.Headers = schema.Literals(entry.Headers)
 			// A remote entry has no type: report it as http, the
 			// transport the agent tries first.
 			srv.Transport = schema.TransportHTTP

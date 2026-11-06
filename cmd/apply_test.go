@@ -10,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
@@ -283,4 +285,114 @@ func TestApply_RemoteServerWrittenForClaudeCode(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"type": "http", "url": "https://example.com/mcp"},
 		readMcpServers(t, a.ConfigPath())["remote"])
+}
+
+func TestResolveSecrets_HeaderReferences(t *testing.T) {
+	servers := []schema.Server{{
+		Name: "remote-api", Transport: "http", URL: "https://example.com/mcp",
+		Headers: map[string]schema.EnvVar{
+			"Authorization": {Secret: "example_auth"},
+			"X-Client":      {Value: "mcpfleet"},
+		},
+	}}
+	opened := 0
+
+	got, err := resolveSecrets(servers, openFake(fakeStore{"example_auth": "Bearer tok"}, &opened))
+	require.NoError(t, err)
+	assert.Equal(t, 1, opened)
+	assert.Equal(t, map[string]schema.EnvVar{
+		"Authorization": {Value: "Bearer tok"},
+		"X-Client":      {Value: "mcpfleet"},
+	}, got[0].Headers)
+	assert.Equal(t, schema.EnvVar{Secret: "example_auth"}, servers[0].Headers["Authorization"], "input is not modified")
+}
+
+func TestResolveSecrets_MissingHeaderSecretNamed(t *testing.T) {
+	servers := []schema.Server{
+		{Name: "remote-api", Transport: "sse", URL: "https://example.com/sse",
+			Headers: map[string]schema.EnvVar{"Authorization": {Secret: "example_auth"}}},
+		{Name: "github", Command: "npx", Env: map[string]schema.EnvVar{"GITHUB_TOKEN": {Secret: "github_token"}}},
+	}
+	opened := 0
+
+	_, err := resolveSecrets(servers, openFake(fakeStore{}, &opened))
+	require.Error(t, err)
+	msg := err.Error()
+	assert.Contains(t, msg, "example_auth (server remote-api, header Authorization)")
+	assert.Contains(t, msg, "github_token (server github, env GITHUB_TOKEN)")
+}
+
+// A remote server's env and a stdio server's headers are not written by any
+// adapter, so their secrets are not read: the vault stays closed and a
+// missing secret there does not stop apply. They are dropped from the
+// resolved server, so no unresolved reference reaches an adapter.
+func TestResolveSecrets_UnusedFieldsNotResolved(t *testing.T) {
+	servers := []schema.Server{
+		{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
+			Env: map[string]schema.EnvVar{"TOKEN": {Secret: "absent"}}},
+		{Name: "local", Command: "npx",
+			Headers: map[string]schema.EnvVar{"Authorization": {Secret: "absent"}}},
+	}
+	opened := 0
+
+	got, err := resolveSecrets(servers, openFake(nil, &opened))
+	require.NoError(t, err)
+	assert.Equal(t, 0, opened)
+	assert.Empty(t, got[0].Env)
+	assert.Empty(t, got[1].Headers)
+}
+
+// apply end to end: the registry holds a secret reference in an http
+// server's Authorization header; claude-code gets the value from the vault.
+func TestApply_RemoteHeadersWrittenForClaudeCode(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "remote-api", Transport: "http", URL: "https://example.com/mcp",
+			Headers: map[string]schema.EnvVar{
+				"Authorization": {Secret: "example_auth"},
+				"X-Client":      {Value: "mcpfleet"},
+			},
+			Env: map[string]schema.EnvVar{"UNUSED": {Secret: "absent"}}},
+	})
+	isolateAgentConfigs(t, home)
+	keyring.MockInit()
+	t.Cleanup(keyring.MockInit)
+	_, _, err := runRootIO(t, strings.NewReader("Bearer tok"), "secret", "set", "example_auth", "--stdin")
+	require.NoError(t, err)
+
+	out, errOut, err := runRootIO(t, nil, "apply", "claude-code")
+	require.NoError(t, err)
+	assert.Empty(t, errOut)
+	assert.Contains(t, out, "Applied 1 MCP server(s) to claude-code")
+
+	a, err := adapters.Get("claude-code")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"type": "http",
+		"url":  "https://example.com/mcp",
+		"headers": map[string]any{
+			"Authorization": "Bearer tok",
+			"X-Client":      "mcpfleet",
+		},
+	}, readMcpServers(t, a.ConfigPath())["remote-api"])
+}
+
+func TestApply_MissingHeaderSecretFailsWithoutWrite(t *testing.T) {
+	home := loginToFakeRegistry(t, []schema.Server{
+		{Name: "remote-api", Transport: "http", URL: "https://example.com/mcp",
+			Headers: map[string]schema.EnvVar{"Authorization": {Secret: "example_auth"}}},
+	})
+	isolateAgentConfigs(t, home)
+	keyring.MockInit()
+	t.Cleanup(keyring.MockInit)
+	_, _, err := runRootIO(t, strings.NewReader("other"), "secret", "set", "other", "--stdin")
+	require.NoError(t, err)
+
+	_, _, err = runRootIO(t, nil, "apply", "claude-code")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "example_auth (server remote-api, header Authorization)")
+
+	a, err := adapters.Get("claude-code")
+	require.NoError(t, err)
+	_, statErr := os.Stat(a.ConfigPath())
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "agent config must not be written: %v", statErr)
 }

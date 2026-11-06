@@ -34,9 +34,12 @@ each agent reads. An agent whose config file cannot hold a server's transport
 (claude-desktop: http and sse; zed: sse), or a remote server without a url,
 is skipped with a "warning: skipping <name>: <reason>" line on stderr.
 
-Env entries that reference a secret ({secret: name}) are filled from the local
-vault. Store them first with "mcpfleet secret set <name>"; a missing secret
-stops apply before any config file is written.
+Env entries of stdio servers and headers of remote servers that reference a
+secret ({secret: name}) are filled from the local vault. Store them first with
+"mcpfleet secret set <name>"; a missing secret stops apply before any config
+file is written. A secret holds the whole header value, e.g. "Bearer <token>".
+The env of a remote server is not written to any agent, and its secrets are
+not read.
 
 Examples:
   mcpfleet apply cursor
@@ -111,51 +114,81 @@ type secretStore interface {
 
 func openVault() (secretStore, error) { return vault.Open() }
 
-// resolveSecrets returns a copy of servers with every env secret reference
-// replaced by its value from the vault. The vault is opened only when some
-// server references a secret. A vault that cannot be opened, or any secret
-// missing from it, is an error naming the affected secrets; nothing is
-// resolved partially.
+// secretField is a map of a server whose secret references apply fills in:
+// env for a stdio server, headers for a remote one.
+type secretField struct {
+	kind string // "env" or "header", as error messages name it
+	get  func(*schema.Server) *map[string]schema.EnvVar
+}
+
+var (
+	envField    = secretField{"env", func(s *schema.Server) *map[string]schema.EnvVar { return &s.Env }}
+	headerField = secretField{"header", func(s *schema.Server) *map[string]schema.EnvVar { return &s.Headers }}
+)
+
+// usedFields returns the field whose secrets s needs resolved, and the one
+// no adapter writes for it: a stdio server uses env, a remote server
+// headers.
+func usedFields(s schema.Server) (used, unused secretField) {
+	if s.IsRemote() {
+		return headerField, envField
+	}
+	return envField, headerField
+}
+
+// resolveSecrets returns a copy of servers with every secret reference of
+// the field each server uses (env for stdio, headers for http and sse)
+// replaced by its value from the vault. The other field is dropped from the
+// copy, unread, since no adapter writes it: its secrets neither open the
+// vault nor stop apply. The vault is opened only when some server references
+// a secret. A vault that cannot be opened, or any secret missing from it, is
+// an error naming the affected secrets; nothing is resolved partially.
 func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) ([]schema.Server, error) {
-	var refs []string // "name (server s, env X)", in server order, env keys sorted
+	var refs []string // "name (server s, env X)", in server order, keys sorted
 	for _, s := range servers {
-		for _, k := range sortedKeys(s.Env) {
-			if ref := s.Env[k].Secret; ref != "" {
-				refs = append(refs, describeRef(s.Name, k, ref))
+		used, _ := usedFields(s)
+		m := *used.get(&s)
+		for _, k := range sortedKeys(m) {
+			if ref := m[k].Secret; ref != "" {
+				refs = append(refs, describeRef(s.Name, used.kind, k, ref))
 			}
 		}
 	}
-	if len(refs) == 0 {
-		return servers, nil
-	}
 
-	store, err := open()
-	if err != nil {
-		return nil, fmt.Errorf("cannot read secrets %s from the vault: %w", strings.Join(refs, ", "), err)
+	var store secretStore
+	if len(refs) > 0 {
+		var err error
+		store, err = open()
+		if err != nil {
+			return nil, fmt.Errorf("cannot read secrets %s from the vault: %w", strings.Join(refs, ", "), err)
+		}
 	}
 
 	out := make([]schema.Server, len(servers))
 	var missing []string
 	for i, s := range servers {
 		out[i] = s
-		if len(s.Env) == 0 {
+		used, unused := usedFields(s)
+		*unused.get(&out[i]) = nil
+		in := *used.get(&s)
+		if len(in) == 0 {
 			continue
 		}
-		env := make(map[string]schema.EnvVar, len(s.Env))
-		for _, k := range sortedKeys(s.Env) {
-			ev := s.Env[k]
+		resolved := make(map[string]schema.EnvVar, len(in))
+		for _, k := range sortedKeys(in) {
+			ev := in[k]
 			if ev.Secret == "" {
-				env[k] = schema.EnvVar{Value: ev.Value}
+				resolved[k] = schema.EnvVar{Value: ev.Value}
 				continue
 			}
 			val, ok := store.Get(ev.Secret)
 			if !ok {
-				missing = append(missing, describeRef(s.Name, k, ev.Secret))
+				missing = append(missing, describeRef(s.Name, used.kind, k, ev.Secret))
 				continue
 			}
-			env[k] = schema.EnvVar{Value: val}
+			resolved[k] = schema.EnvVar{Value: val}
 		}
-		out[i].Env = env
+		*used.get(&out[i]) = resolved
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing secrets in vault: %s; set them with: mcpfleet secret set <name>", strings.Join(missing, ", "))
@@ -163,9 +196,10 @@ func resolveSecrets(servers []schema.Server, open func() (secretStore, error)) (
 	return out, nil
 }
 
-// describeRef names a secret reference for error messages.
-func describeRef(server, envKey, secret string) string {
-	return fmt.Sprintf("%s (server %s, env %s)", secret, server, envKey)
+// describeRef names a secret reference for error messages, e.g.
+// "example_auth (server remote-api, header Authorization)".
+func describeRef(server, kind, key, secret string) string {
+	return fmt.Sprintf("%s (server %s, %s %s)", secret, server, kind, key)
 }
 
 func sortedKeys(env map[string]schema.EnvVar) []string {

@@ -30,8 +30,8 @@ type fakeRegistry struct {
 // (internal/api/routes.go); keep the two lists in sync.
 var serverBodyKeys = map[string]bool{
 	"name": true, "description": true, "transport": true, "install": true,
-	"command": true, "url": true, "args": true, "env": true, "tags": true,
-	"platforms": true,
+	"command": true, "url": true, "args": true, "env": true, "headers": true,
+	"tags": true, "platforms": true,
 }
 
 func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +60,7 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{
 			"id": "0000", "description": "", "transport": "stdio",
 			"install": map[string]any{}, "command": "", "url": "", "args": []any{},
-			"env": map[string]any{}, "tags": []any{}, "platforms": []any{},
+			"env": map[string]any{}, "headers": map[string]any{}, "tags": []any{}, "platforms": []any{},
 			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
 		}
 		for k, v := range body {
@@ -108,6 +108,9 @@ func githubServer() *schema.Server {
 			"GITHUB_TOKEN": {Secret: "github_token"},
 			"LOG_LEVEL":    {Value: "debug"},
 		},
+		// The registry returns headers as {} for every server; empty, it
+		// is left out of the request body.
+		Headers:   map[string]schema.EnvVar{},
 		Tags:      []string{"dev"},
 		Platforms: []string{"linux"},
 	}
@@ -171,7 +174,8 @@ func TestPushPullRoundTrip_RemoteServer(t *testing.T) {
 	// The registry returns every collection, empty ones as [] or {}, so a
 	// pulled server has empty (not nil) collections.
 	want := &schema.Server{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
-		Args: []string{}, Env: map[string]schema.EnvVar{}, Tags: []string{}, Platforms: []string{}}
+		Args: []string{}, Env: map[string]schema.EnvVar{}, Headers: map[string]schema.EnvVar{},
+		Tags: []string{}, Platforms: []string{}}
 	if _, err := c.CreateServer(ctx, want); err != nil {
 		t.Fatalf("CreateServer: %v", err)
 	}
@@ -196,12 +200,45 @@ func TestFakeRegistry_RejectsUnknownKey(t *testing.T) {
 	ts := httptest.NewServer(&fakeRegistry{})
 	defer ts.Close()
 	resp, err := http.Post(ts.URL+"/v1/servers", "application/json",
-		strings.NewReader(`{"name":"x","headers":{"A":"b"}}`))
+		strings.NewReader(`{"name":"x","bogus":{"A":"b"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want 422", resp.StatusCode)
+	}
+}
+
+// TestPushPullRoundTrip_RemoteHeaders pushes an http server whose
+// Authorization header references a secret: the request body carries the
+// reference, never a value, and pull returns it unchanged.
+func TestPushPullRoundTrip_RemoteHeaders(t *testing.T) {
+	fake := &fakeRegistry{}
+	c := newTestClient(t, fake)
+	ctx := context.Background()
+
+	want := &schema.Server{Name: "remote", Transport: "http", URL: "https://example.com/mcp",
+		Headers: map[string]schema.EnvVar{
+			"Authorization": {Secret: "example_auth"},
+			"X-Client":      {Value: "mcpfleet"},
+		},
+		Args: []string{}, Env: map[string]schema.EnvVar{}, Tags: []string{}, Platforms: []string{}}
+	if _, err := c.CreateServer(ctx, want); err != nil {
+		t.Fatalf("CreateServer: %v", err)
+	}
+	headers, _ := fake.bodies[0]["headers"].(map[string]any)
+	if auth, _ := headers["Authorization"].(map[string]any); !reflect.DeepEqual(auth, map[string]any{"secret": "example_auth"}) {
+		t.Errorf("request body headers.Authorization = %v, want {secret: example_auth}", headers["Authorization"])
+	}
+	got, err := c.ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d servers, want 1", len(got))
+	}
+	if !reflect.DeepEqual(got[0], *want) {
+		t.Errorf("round trip changed the server\n got: %+v\nwant: %+v", got[0], *want)
 	}
 }

@@ -148,9 +148,18 @@ Describe your MCP servers in a YAML file. The file is a list of server definitio
     GITHUB_TOKEN:
       secret: github_token
   tags: [dev, vcs]
+
+- name: remote-api
+  transport: http
+  url: https://example.com/mcp
+  headers:
+    Authorization:
+      secret: example_auth
+    X-Client:
+      value: mcpfleet
 ```
 
-`env` maps each variable to either a `value` (a literal) or a `secret` (the name of a secret in your local vault, filled in when you apply).
+`env` maps each variable to either a `value` (a literal) or a `secret` (the name of a secret in your local vault, filled in when you apply). `headers` (remote servers only) are the HTTP headers sent to the server, in the same form. A secret holds the whole header value, so store a bearer token with its prefix: `printf 'Bearer %s' "$TOKEN" | mcpfleet secret set example_auth --stdin`. The registry refuses a literal `value` for `Authorization`, `Proxy-Authorization` and `Cookie`.
 
 ```bash
 # 1. Authenticate with the registry
@@ -161,6 +170,7 @@ mcpfleet push servers.yaml
 
 # 3. Store the secrets your servers reference (env: GITHUB_TOKEN: {secret: github_token})
 mcpfleet secret set github_token
+mcpfleet secret set example_auth   # e.g. "Bearer <token>"
 
 # 4. Apply all servers to Cursor
 mcpfleet apply cursor
@@ -211,8 +221,9 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 
 - Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was. An applied entry is replaced as a whole, so options you added by hand to a server that mcpfleet manages (for example a timeout or disabled tools) are dropped on the next `apply`.
 - Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
-- A config file that does not exist yet is created with `0600` permissions (readable by you only), because it holds `env` values resolved from the vault. Directories `apply` has to create for it get `0700`. An existing file keeps its permissions, and so do existing directories.
-- An `env` entry that references a secret (`{secret: github_token}`) is filled from the local vault. If a referenced secret is not in the vault, or the vault cannot be opened, `apply` stops with an error naming the secret and writes nothing. Store it with `mcpfleet secret set <name>` and run `apply` again.
+- A config file that does not exist yet is created with `0600` permissions (readable by you only), because it holds `env` and `headers` values resolved from the vault. Directories `apply` has to create for it get `0700`. An existing file keeps its permissions, and so do existing directories.
+- An `env` entry of a local server, or a `headers` entry of a remote one, that references a secret (`{secret: github_token}`) is filled from the local vault. If a referenced secret is not in the vault, or the vault cannot be opened, `apply` stops with an error naming the secret and the env variable or header, and writes nothing. Store it with `mcpfleet secret set <name>` and run `apply` again. The `env` of a remote server is not written to any agent, and its secrets are not read.
+- Header values are written as they are. Claude Code expands `${VAR}`, Cursor and Windsurf `${env:NAME}`, and Crush `$VAR` and `$(...)` in them, so a value containing `$` is interpreted by the agent.
 - If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
 - JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
 - Zed's `settings.json` may contain comments and trailing commas. They are kept: only the `context_servers` entries being applied change.

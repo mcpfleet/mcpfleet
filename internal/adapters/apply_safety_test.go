@@ -283,19 +283,45 @@ func TestApply_ExistingFileKeepsMode(t *testing.T) {
 }
 
 // remoteEntry is the entry each adapter writes for a remote server with the
-// given transport and URL, or nil when the adapter skips that transport.
-var remoteEntry = map[string]func(transport, url string) map[string]any{
-	"claude-code": func(tr, u string) map[string]any { return map[string]any{"type": tr, "url": u} },
-	"crush":       func(tr, u string) map[string]any { return map[string]any{"type": tr, "url": u} },
-	"cursor":      func(_, u string) map[string]any { return map[string]any{"url": u} },
-	"windsurf":    func(_, u string) map[string]any { return map[string]any{"serverUrl": u} },
-	"zed": func(tr, u string) map[string]any {
+// given transport, URL and headers (left out when empty), or nil when the
+// adapter skips that transport.
+var remoteEntry = map[string]func(transport, url string, headers map[string]any) map[string]any{
+	"claude-code": func(tr, u string, h map[string]any) map[string]any {
+		return withHeaders(map[string]any{"type": tr, "url": u}, h)
+	},
+	"crush": func(tr, u string, h map[string]any) map[string]any {
+		return withHeaders(map[string]any{"type": tr, "url": u}, h)
+	},
+	"cursor": func(_, u string, h map[string]any) map[string]any {
+		return withHeaders(map[string]any{"url": u}, h)
+	},
+	"windsurf": func(_, u string, h map[string]any) map[string]any {
+		return withHeaders(map[string]any{"serverUrl": u}, h)
+	},
+	"zed": func(tr, u string, h map[string]any) map[string]any {
 		if tr != "http" {
 			return nil // Zed has no SSE transport
 		}
-		return map[string]any{"url": u}
+		return withHeaders(map[string]any{"url": u}, h)
 	},
-	"claude-desktop": func(string, string) map[string]any { return nil },
+	"claude-desktop": func(string, string, map[string]any) map[string]any { return nil },
+}
+
+func withHeaders(entry, headers map[string]any) map[string]any {
+	if len(headers) > 0 {
+		entry["headers"] = headers
+	}
+	return entry
+}
+
+// headerValues is the "headers" object an adapter writes for s: header name
+// to literal value, as apply passes them after resolving secrets.
+func headerValues(s schema.Server) map[string]any {
+	h := map[string]any{}
+	for k, v := range s.Headers {
+		h[k] = v.Value
+	}
+	return h
 }
 
 // listTransport is the transport List reports for a remote entry the
@@ -312,7 +338,11 @@ var listTransport = map[string]func(transport string) string{
 var remoteServers = []schema.Server{
 	{Name: "local", Command: "npx", Args: []string{"-y", "pkg"}},
 	{Name: "remote-http", Transport: "http", URL: "https://example.com/mcp",
-		Env: map[string]schema.EnvVar{"IGNORED": {Value: "x"}}},
+		Env: map[string]schema.EnvVar{"IGNORED": {Value: "x"}},
+		Headers: map[string]schema.EnvVar{
+			"Authorization": {Value: "Bearer tok$EN"},
+			"X-Client":      {Value: "mcpfleet"},
+		}},
 	{Name: "remote-sse", Transport: "sse", URL: "https://example.com/sse"},
 }
 
@@ -333,7 +363,7 @@ func TestApply_RemoteServersEntryShape(t *testing.T) {
 			t.Errorf("unrelated entry lost: %v", entries)
 		}
 		for _, s := range remoteServers[1:] {
-			want := remoteEntry[a.Name()](s.Transport, s.URL)
+			want := remoteEntry[a.Name()](s.Transport, s.URL, headerValues(s))
 			got, written := entries[s.Name]
 			if want == nil {
 				if s.Name == "remote-http" {
@@ -367,7 +397,7 @@ func TestApply_RemoteServersListRoundTrip(t *testing.T) {
 			got[s.Name] = s
 		}
 		for _, s := range remoteServers[1:] {
-			if remoteEntry[a.Name()](s.Transport, s.URL) == nil {
+			if remoteEntry[a.Name()](s.Transport, s.URL, nil) == nil {
 				if _, ok := got[s.Name]; ok {
 					t.Errorf("%s: listed although skipped", s.Name)
 				}
@@ -381,6 +411,9 @@ func TestApply_RemoteServersListRoundTrip(t *testing.T) {
 			if want := listTransport[a.Name()](s.Transport); l.Transport != want || l.URL != s.URL || l.Command != "" {
 				t.Errorf("%s listed as transport=%q url=%q command=%q, want transport=%q url=%q command=\"\"",
 					s.Name, l.Transport, l.URL, l.Command, want, s.URL)
+			}
+			if len(s.Headers) > 0 && !reflect.DeepEqual(l.Headers, s.Headers) {
+				t.Errorf("%s listed with headers %v, want %v", s.Name, l.Headers, s.Headers)
 			}
 		}
 	})
@@ -401,6 +434,31 @@ func TestApply_RemoteServersSkippedWithoutWrite(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			data, _ := os.ReadFile(path)
 			t.Errorf("config written although every server was skipped (err=%v):\n%s", err, data)
+		}
+	})
+}
+
+// Every adapter that accepts a remote transport must write the server's
+// headers: a remote server written without its Authorization header would
+// fail with 401 or start an unexpected OAuth prompt. An adapter that cannot
+// write headers must not report http or sse as supported, so Partition skips
+// the whole server with a warning instead.
+func TestApply_RemoteAdaptersWriteHeaders(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		for _, tr := range []string{"http", "sse"} {
+			if !a.SupportsTransport(tr) {
+				continue
+			}
+			srv := schema.Server{Name: "remote-" + tr, Transport: tr, URL: "https://example.com/" + tr,
+				Headers: map[string]schema.EnvVar{"Authorization": {Value: "Bearer tok"}}}
+			if err := a.Apply([]schema.Server{srv}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			entries, _ := readJSON(t, a.ConfigPath())[key].(map[string]any)
+			entry, _ := entries[srv.Name].(map[string]any)
+			if want := map[string]any{"Authorization": "Bearer tok"}; !reflect.DeepEqual(entry["headers"], want) {
+				t.Errorf("%s supports %s but wrote headers %v, want %v (entry %v)", a.Name(), tr, entry["headers"], want, entry)
+			}
 		}
 	})
 }

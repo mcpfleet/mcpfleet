@@ -80,7 +80,7 @@ func TestServer_YAMLKeysAndOmitEmpty(t *testing.T) {
 		"transport": "stdio",
 		"install":   map[string]any{"type": "binary", "package": "min"},
 		"command":   "min",
-	}, got, "required keys only; description/url/args/env/tags/platforms/install.version omitted:\n%s", out)
+	}, got, "required keys only; description/url/args/env/headers/tags/platforms/install.version omitted:\n%s", out)
 }
 
 func TestServer_YAMLURLRoundTrip(t *testing.T) {
@@ -110,4 +110,27 @@ func TestEnvVar_YAMLOmitEmpty(t *testing.T) {
 		"LIT": {"value": "v"},
 		"REF": {"secret": "s"},
 	}, got)
+}
+
+func TestServer_YAMLHeaders(t *testing.T) {
+	src := `
+name: remote-api
+transport: http
+url: https://example.com/mcp
+headers:
+  Authorization: {secret: example_auth}
+  X-Client: {value: mcpfleet}
+`
+	var srv Server
+	require.NoError(t, yaml.Unmarshal([]byte(src), &srv))
+	assert.Equal(t, map[string]EnvVar{
+		"Authorization": {Secret: "example_auth"},
+		"X-Client":      {Value: "mcpfleet"},
+	}, srv.Headers)
+
+	out, err := yaml.Marshal(srv)
+	require.NoError(t, err)
+	var back Server
+	require.NoError(t, yaml.Unmarshal(out, &back))
+	assert.Equal(t, srv, back)
 }
