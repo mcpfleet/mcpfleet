@@ -215,6 +215,36 @@ func TestErrorStatuses_IsAndDetail(t *testing.T) {
 	}
 }
 
+// TestAPIError_ValidationDetails shows each errors[] entry of a 422, so the
+// user learns which field the registry rejected and why.
+func TestAPIError_ValidationDetails(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"one entry",
+			`{"detail":"validation failed","errors":[{"location":"body.url","message":"url is required for transport sse","value":""}]}`,
+			"registry: unexpected status 422: validation failed: body.url: url is required for transport sse"},
+		{"two entries",
+			`{"detail":"validation failed","errors":[{"location":"body.command","message":"command is required for transport stdio"},{"location":"body.url","message":"url is only used for transport http or sse"}]}`,
+			"registry: unexpected status 422: validation failed: body.command: command is required for transport stdio; body.url: url is only used for transport http or sse"},
+		{"entry without location",
+			`{"detail":"validation failed","errors":[{"message":"bad body"}]}`,
+			"registry: unexpected status 422: validation failed: bad body"},
+		{"no entries",
+			`{"detail":"validation failed"}`,
+			"registry: unexpected status 422: validation failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newTestClient(t, &recorder{status: http.StatusUnprocessableEntity, body: tc.body})
+			_, err := c.CreateServer(context.Background(), &schema.Server{Name: "x"})
+			assert.EqualError(t, err, tc.want)
+		})
+	}
+}
+
 func TestInvalidJSONResponse(t *testing.T) {
 	c := newTestClient(t, &recorder{body: `{"name":`})
 	_, err := c.GetServer(context.Background(), "abc")
