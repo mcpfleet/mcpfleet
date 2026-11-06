@@ -72,3 +72,59 @@ func TestPush_CreatesWhenServerMissing(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, []string{"GET /v1/servers/github", "POST /v1/servers"}, *seen)
 }
+
+// pushNameError runs push on a file with one server named by yamlName
+// against a registry that rejects the name, and returns stderr and the
+// requests the registry saw.
+func pushNameError(t *testing.T, yamlName string, routes map[string]struct {
+	status int
+	body   string
+}) (string, []string) {
+	t.Helper()
+	seen, mu := fakeRegistry(t, routes)
+	file := filepath.Join(t.TempDir(), "servers.yaml")
+	require.NoError(t, os.WriteFile(file, []byte("- name: "+yamlName+"\n  command: npx\n"), 0o600))
+
+	var stdout, stderr bytes.Buffer
+	code := runForTest(t, []string{"push", file}, &stdout, &stderr)
+	assert.Equal(t, 1, code, stdout.String())
+
+	mu.Lock()
+	defer mu.Unlock()
+	return stderr.String(), append([]string(nil), *seen...)
+}
+
+// "." and ".." cannot be sent as one path segment (proxies normalize them
+// away), so push creates them without a lookup and shows the registry's 422.
+func TestPush_InvalidNameShowsRegistryError(t *testing.T) {
+	for _, name := range []string{".", ".."} {
+		t.Run(name, func(t *testing.T) {
+			stderr, seen := pushNameError(t, `"`+name+`"`, map[string]struct {
+				status int
+				body   string
+			}{
+				"POST /v1/servers": {http.StatusUnprocessableEntity,
+					`{"status":422,"detail":"validation failed","errors":[{"location":"body.name","message":"name must not be \".\" or \"..\""}]}`},
+			})
+			assert.Contains(t, stderr, `create server "`+name+`"`)
+			assert.Contains(t, stderr, `validation failed: body.name: name must not be "." or ".."`)
+			assert.Equal(t, []string{"POST /v1/servers"}, seen)
+		})
+	}
+}
+
+// A name with a control character is escaped in the path, so the lookup
+// runs as usual (404) and the create shows the registry's 422.
+func TestPush_ControlCharNameShowsRegistryError(t *testing.T) {
+	stderr, seen := pushNameError(t, `"a\nb"`, map[string]struct {
+		status int
+		body   string
+	}{
+		"GET /v1/servers/a\nb": {http.StatusNotFound, `{"detail":"server not found"}`},
+		"POST /v1/servers": {http.StatusUnprocessableEntity,
+			`{"status":422,"detail":"validation failed","errors":[{"location":"body.name","message":"name must not contain control characters (found U+000A at byte 1)"}]}`},
+	})
+	assert.Contains(t, stderr, `create server "a\nb"`)
+	assert.Contains(t, stderr, "validation failed: body.name: name must not contain control characters (found U+000A at byte 1)")
+	assert.Equal(t, []string{"GET /v1/servers/a\nb", "POST /v1/servers"}, seen)
+}
