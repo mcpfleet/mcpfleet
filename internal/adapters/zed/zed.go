@@ -32,7 +32,8 @@ type contextServer struct {
 	Command json.RawMessage   `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
-	URL     string            `json:"url,omitempty"` // remote (http) servers only
+	URL     string            `json:"url,omitempty"`     // remote (http) servers only
+	Headers map[string]string `json:"headers,omitempty"` // remote (http) servers only
 }
 
 // localServer is the flat stdio entry Apply writes.
@@ -43,9 +44,13 @@ type localServer struct {
 }
 
 // remoteServer is the entry Apply writes for a remote server: Zed's HTTP
-// context server, told apart from a local one by its "url" alone.
+// context server, told apart from a local one by its "url" alone, with its
+// HTTP headers beside it (the Http variant of ContextServerSettings in
+// crates/project/src/project_settings.rs, and docs/src/ai/mcp.md). Without an
+// "Authorization" header Zed starts the MCP OAuth flow.
 type remoteServer struct {
-	URL string `json:"url"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // contextCommand is the nested "command" object of the old entry format.
@@ -147,7 +152,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 
 	for _, s := range servers {
-		var entry any = remoteServer{URL: s.URL}
+		var entry any = remoteServer{URL: s.URL, Headers: schema.Values(s.Headers)}
 		if !s.IsRemote() {
 			local := localServer{Command: s.Command, Args: s.Args}
 			if len(s.Env) > 0 {
@@ -361,6 +366,7 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		if cs.URL != "" && cmd.Path == "" {
 			srv.Transport = schema.TransportHTTP
 			srv.URL = cs.URL
+			srv.Headers = schema.Literals(cs.Headers)
 		}
 		servers = append(servers, srv)
 	}

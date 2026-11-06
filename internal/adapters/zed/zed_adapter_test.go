@@ -194,3 +194,31 @@ func TestList_RejectsNonStringCommand(t *testing.T) {
 		})
 	}
 }
+
+// A remote server replaces a local entry of a JSONC settings file with
+// Zed's HTTP context server, headers included; comments elsewhere stay, and
+// List reads the headers back.
+func TestApply_RemoteHeadersInJSONCSettings(t *testing.T) {
+	path := setup(t, jsoncSettings)
+	a := zed.New()
+	require.NoError(t, a.Apply([]schema.Server{{
+		Name: "replace-me", Transport: "http", URL: "https://example.com/mcp",
+		Headers: map[string]schema.EnvVar{"Authorization": {Value: "Bearer tok"}},
+	}}))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "// keep me")
+	assert.Equal(t, map[string]any{
+		"url":     "https://example.com/mcp",
+		"headers": map[string]any{"Authorization": "Bearer tok"},
+	}, contextServers(t, path)["replace-me"])
+
+	got, err := a.List()
+	require.NoError(t, err)
+	byName := map[string]schema.Server{}
+	for _, s := range got {
+		byName[s.Name] = s
+	}
+	assert.Equal(t, map[string]schema.EnvVar{"Authorization": {Value: "Bearer tok"}}, byName["replace-me"].Headers)
+}
