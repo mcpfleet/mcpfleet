@@ -16,6 +16,21 @@ type Server struct {
 	Platforms   []string          `yaml:"platforms,omitempty" json:"platforms,omitempty"` // linux, darwin, windows
 }
 
+// Transports of a server: stdio starts a local command, http and sse
+// connect to a remote server at URL.
+const (
+	TransportStdio = "stdio"
+	TransportHTTP  = "http"
+	TransportSSE   = "sse"
+)
+
+// IsRemote reports whether the server is reached over the network (http or
+// sse) instead of being started as a local command. An empty transport is
+// stdio.
+func (s Server) IsRemote() bool {
+	return s.Transport == TransportHTTP || s.Transport == TransportSSE
+}
+
 // InstallConfig describes how to install the server runtime.
 type InstallConfig struct {
 	Type    string `yaml:"type" json:"type"`                           // npx | uvx | docker | binary | go
