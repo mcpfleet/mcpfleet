@@ -85,6 +85,35 @@ func TestPull_WritesToCommandOut(t *testing.T) {
 	assert.Equal(t, "pulled 1 server(s) -> "+file+"\n", stdout.String())
 }
 
+func TestList_ShowsTransportAndTarget(t *testing.T) {
+	fakeRegistry(t, map[string]struct {
+		status int
+		body   string
+	}{
+		"GET /v1/servers": {http.StatusOK, `[
+			{"name":"fs","transport":"stdio","command":"npx","args":["-y","fs"]},
+			{"name":"api","transport":"http","url":"https://example.com/mcp"},
+			{"name":"events","transport":"sse","url":"https://example.com/sse"},
+			{"name":"legacy","command":"uvx","args":["x"]},
+			{"name":"broken","transport":"sse"}
+		]`},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runForTest(t, []string{"list"}, &stdout, &stderr)
+	require.Equal(t, 0, code, stderr.String())
+
+	out := stdout.String()
+	assert.Contains(t, out, "NAME    TRANSPORT  TARGET\n")
+	assert.Contains(t, out, "----    ---------  ------\n")
+	assert.Contains(t, out, "fs      stdio      npx -y fs\n")
+	assert.Contains(t, out, "api     http       https://example.com/mcp\n")
+	assert.Contains(t, out, "events  sse        https://example.com/sse\n")
+	assert.Contains(t, out, "legacy  stdio      uvx x\n")
+	assert.Contains(t, out, "broken  sse        -\n")
+	assert.NotContains(t, out, "COMMAND")
+}
+
 func TestList_WritesToCommandOut(t *testing.T) {
 	t.Run("servers", func(t *testing.T) {
 		fakeRegistry(t, map[string]struct {
@@ -98,8 +127,8 @@ func TestList_WritesToCommandOut(t *testing.T) {
 		code := runForTest(t, []string{"list"}, &stdout, &stderr)
 		require.Equal(t, 0, code, stderr.String())
 		assert.Contains(t, stdout.String(), "MCP Servers")
-		assert.Contains(t, stdout.String(), "NAME    COMMAND  ARGS\n")
-		assert.Contains(t, stdout.String(), "github  npx      -y gh\n")
+		assert.Contains(t, stdout.String(), "NAME    TRANSPORT  TARGET\n")
+		assert.Contains(t, stdout.String(), "github  stdio      npx -y gh\n")
 	})
 	t.Run("empty", func(t *testing.T) {
 		fakeRegistry(t, map[string]struct {
