@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,6 +186,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return resp, nil
 }
 
+// serverPath is the path of one server. The name or ID is escaped as a single
+// path segment, so "/", "?", "#" and spaces in a name reach the right endpoint.
+func serverPath(id string) string {
+	return "/v1/servers/" + url.PathEscape(id)
+}
+
 // ListServers fetches all MCP servers from the registry.
 func (c *Client) ListServers(ctx context.Context) ([]schema.Server, error) {
 	var result []schema.Server
@@ -197,7 +204,7 @@ func (c *Client) ListServers(ctx context.Context) ([]schema.Server, error) {
 // GetServer fetches a single server by ID.
 func (c *Client) GetServer(ctx context.Context, id string) (*schema.Server, error) {
 	var result schema.Server
-	if _, err := c.do(ctx, http.MethodGet, "/v1/servers/"+id, nil, &result); err != nil {
+	if _, err := c.do(ctx, http.MethodGet, serverPath(id), nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -215,7 +222,7 @@ func (c *Client) CreateServer(ctx context.Context, srv *schema.Server) (*schema.
 // UpdateServer replaces an existing MCP server definition.
 func (c *Client) UpdateServer(ctx context.Context, id string, srv *schema.Server) (*schema.Server, error) {
 	var result schema.Server
-	if _, err := c.do(ctx, http.MethodPut, "/v1/servers/"+id, srv, &result); err != nil {
+	if _, err := c.do(ctx, http.MethodPut, serverPath(id), srv, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -223,7 +230,7 @@ func (c *Client) UpdateServer(ctx context.Context, id string, srv *schema.Server
 
 // DeleteServer removes a server from the registry by ID.
 func (c *Client) DeleteServer(ctx context.Context, id string) error {
-	_, err := c.do(ctx, http.MethodDelete, "/v1/servers/"+id, nil, nil)
+	_, err := c.do(ctx, http.MethodDelete, serverPath(id), nil, nil)
 	return err
 }
 
