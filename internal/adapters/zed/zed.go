@@ -3,6 +3,7 @@ package zed
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,9 +22,24 @@ type zedSettings struct {
 	ContextServers map[string]contextServer `json:"context_servers"`
 }
 
+// contextServer is one "context_servers" entry as List reads it. Zed's
+// schema (ContextServerSettingsContent in crates/settings_content/src/project.rs)
+// has a flat stdio entry: "command" is the executable, with "args" and "env"
+// beside it. Older settings nest them as "command": {"path", "args", "env"}
+// (Zed's m_2025_06_27 migration flattens those), so "command" is kept raw and
+// decoded by its JSON type.
 type contextServer struct {
-	Command contextCommand `json:"command"`
-	URL     string         `json:"url,omitempty"` // remote (http) servers only
+	Command json.RawMessage   `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	URL     string            `json:"url,omitempty"` // remote (http) servers only
+}
+
+// localServer is the flat stdio entry Apply writes.
+type localServer struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // remoteServer is the entry Apply writes for a remote server: Zed's HTTP
@@ -32,6 +48,8 @@ type remoteServer struct {
 	URL string `json:"url"`
 }
 
+// contextCommand is the nested "command" object of the old entry format,
+// read by List only.
 type contextCommand struct {
 	Path string            `json:"path"`
 	Args []string          `json:"args,omitempty"`
@@ -129,7 +147,9 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	for _, s := range servers {
 		var entry any = remoteServer{URL: s.URL}
 		if !s.IsRemote() {
-			local := contextServer{Command: contextCommand{Path: s.Command, Args: s.Args}}
+			local := struct {
+				Command contextCommand `json:"command"`
+			}{Command: contextCommand{Path: s.Command, Args: s.Args}}
 			if len(s.Env) > 0 {
 				local.Command.Env = make(map[string]string, len(s.Env))
 				for k, v := range s.Env {
@@ -324,21 +344,51 @@ func (a *Adapter) List() ([]schema.Server, error) {
 	}
 	var servers []schema.Server
 	for name, cs := range cfg.ContextServers {
-		env := make(map[string]schema.EnvVar, len(cs.Command.Env))
-		for k, v := range cs.Command.Env {
+		cmd, err := decodeCommand(cs)
+		if err != nil {
+			return nil, fmt.Errorf("zed: parse config: server %q: %w", name, err)
+		}
+		env := make(map[string]schema.EnvVar, len(cmd.Env))
+		for k, v := range cmd.Env {
 			env[k] = schema.EnvVar{Value: v}
 		}
 		srv := schema.Server{
 			Name:    name,
-			Command: cs.Command.Path,
-			Args:    cs.Command.Args,
+			Command: cmd.Path,
+			Args:    cmd.Args,
 			Env:     env,
 		}
-		if cs.URL != "" && cs.Command.Path == "" {
+		if cs.URL != "" && cmd.Path == "" {
 			srv.Transport = schema.TransportHTTP
 			srv.URL = cs.URL
 		}
 		servers = append(servers, srv)
 	}
 	return servers, nil
+}
+
+// decodeCommand reads the command of an entry in either format: a string
+// "command" is the flat format (args and env sit beside it), an object is the
+// old nested format. A missing or null "command" is a remote or extension
+// entry and gives an empty command. Any other JSON type is an error.
+func decodeCommand(cs contextServer) (contextCommand, error) {
+	raw := bytes.TrimSpace(cs.Command)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return contextCommand{}, nil
+	}
+	switch raw[0] {
+	case '"':
+		var path string
+		if err := json.Unmarshal(raw, &path); err != nil {
+			return contextCommand{}, err
+		}
+		return contextCommand{Path: path, Args: cs.Args, Env: cs.Env}, nil
+	case '{':
+		var cmd contextCommand
+		if err := json.Unmarshal(raw, &cmd); err != nil {
+			return contextCommand{}, err
+		}
+		return cmd, nil
+	}
+	return contextCommand{}, errors.New(`"command" is neither a string nor an object`)
 }

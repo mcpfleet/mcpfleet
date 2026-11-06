@@ -183,3 +183,14 @@ func TestList_ReadsMixedFormats(t *testing.T) {
 		{Name: "remote", Transport: schema.TransportHTTP, URL: "https://example.com/mcp", Env: map[string]schema.EnvVar{}},
 	}, got)
 }
+
+func TestList_RejectsNonStringCommand(t *testing.T) {
+	for name, cmd := range map[string]string{"number": `42`, "array": `["npx"]`, "bool": `true`} {
+		t.Run(name, func(t *testing.T) {
+			setup(t, `{"context_servers": {"bad": {"command": `+cmd+`}}}`)
+			_, err := zed.New().List()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), `zed: parse config: server "bad": "command" is neither a string nor an object`)
+		})
+	}
+}
