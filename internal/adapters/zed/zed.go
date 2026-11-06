@@ -48,8 +48,8 @@ type remoteServer struct {
 	URL string `json:"url"`
 }
 
-// contextCommand is the nested "command" object of the old entry format,
-// read by List only.
+// contextCommand is the nested "command" object of the old entry format.
+// List decodes both formats into it (see decodeCommand); Apply never writes it.
 type contextCommand struct {
 	Path string            `json:"path"`
 	Args []string          `json:"args,omitempty"`
