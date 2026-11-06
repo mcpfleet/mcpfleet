@@ -29,6 +29,11 @@ claude-code writes to Claude Code's user config (~/.claude.json, or
 $CLAUDE_CONFIG_DIR/.claude.json); claude-desktop writes to the Claude Desktop
 app's claude_desktop_config.json.
 
+Remote servers (transport http or sse, with a url) are written in the format
+each agent reads. An agent whose config file cannot hold a server's transport
+(claude-desktop: http and sse; zed: sse), or a remote server without a url,
+is skipped with a "warning: skipping <name>: <reason>" line on stderr.
+
 Env entries that reference a secret ({secret: name}) are filled from the local
 vault. Store them first with "mcpfleet secret set <name>"; a missing secret
 stops apply before any config file is written.
@@ -68,17 +73,28 @@ Examples:
 				log.Debug("Filtered servers by tag", "count", len(servers))
 			}
 
-			// 4. Resolve secrets from vault. Any failure stops here, before
+			// 4. Leave out the servers this agent cannot hold, with a
+			// warning, before secrets are resolved: a skipped server's
+			// missing secret does not stop apply.
+			servers, skipped := adapters.Partition(adapter, servers)
+			for _, s := range skipped {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: skipping %s: %s\n", s.Server.Name, s.Reason)
+			}
+
+			// 5. Resolve secrets from vault. Any failure stops here, before
 			// the agent config is touched.
 			servers, err = resolveSecrets(servers, openVault)
 			if err != nil {
 				return err
 			}
 
-			// 5. Write config via agent adapter.
-			log.Debug("Writing agent config", "path", adapter.ConfigPath())
-			if err := adapter.Apply(servers); err != nil {
-				return fmt.Errorf("apply: %w", err)
+			// 6. Write config via agent adapter, unless every server was
+			// skipped.
+			if len(servers) > 0 || len(skipped) == 0 {
+				log.Debug("Writing agent config", "path", adapter.ConfigPath())
+				if err := adapter.Apply(servers); err != nil {
+					return fmt.Errorf("apply: %w", err)
+				}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
 			return nil
