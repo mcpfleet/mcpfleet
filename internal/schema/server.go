@@ -12,8 +12,11 @@ type Server struct {
 	URL         string            `yaml:"url,omitempty" json:"url,omitempty"` // http | sse only: the remote server address
 	Args        []string          `yaml:"args,omitempty" json:"args,omitempty"`
 	Env         map[string]EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
-	Tags        []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Platforms   []string          `yaml:"platforms,omitempty" json:"platforms,omitempty"` // linux, darwin, windows
+	// Headers are the HTTP headers sent to a remote (http or sse) server,
+	// each a literal value or a reference to a vault secret, as in Env.
+	Headers   map[string]EnvVar `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Tags      []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Platforms []string          `yaml:"platforms,omitempty" json:"platforms,omitempty"` // linux, darwin, windows
 }
 
 // Transports of a server: stdio starts a local command, http and sse
@@ -69,3 +72,14 @@ type Manifest struct {
 //     secret: github_token
 // tags: [dev, vcs]
 // platforms: [linux, darwin, windows]
+//
+// A remote server has a url and, optionally, HTTP headers:
+//
+// name: remote-api
+// transport: http
+// url: https://example.com/mcp
+// headers:
+//   Authorization:
+//     secret: example_auth
+//   X-Client:
+//     value: mcpfleet

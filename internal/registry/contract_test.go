@@ -108,6 +108,9 @@ func githubServer() *schema.Server {
 			"GITHUB_TOKEN": {Secret: "github_token"},
 			"LOG_LEVEL":    {Value: "debug"},
 		},
+		// The registry returns headers as {} for every server; empty, it
+		// is left out of the request body.
+		Headers:   map[string]schema.EnvVar{},
 		Tags:      []string{"dev"},
 		Platforms: []string{"linux"},
 	}
