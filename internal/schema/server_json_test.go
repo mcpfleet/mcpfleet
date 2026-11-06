@@ -133,3 +133,17 @@ func TestServer_JSONHeaders(t *testing.T) {
 		t.Errorf("decoded headers = %v", back.Headers)
 	}
 }
+
+func TestValuesAndLiterals(t *testing.T) {
+	if Values(nil) != nil || Literals(nil) != nil || Values(map[string]EnvVar{}) != nil {
+		t.Error("empty maps must give nil")
+	}
+	m := map[string]EnvVar{"Authorization": {Value: "Bearer tok"}}
+	v := Values(m)
+	if len(v) != 1 || v["Authorization"] != "Bearer tok" {
+		t.Errorf("Values = %v", v)
+	}
+	if back := Literals(v); len(back) != 1 || back["Authorization"] != m["Authorization"] {
+		t.Errorf("Literals = %v", back)
+	}
+}

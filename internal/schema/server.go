@@ -83,3 +83,30 @@ type Manifest struct {
 //     secret: example_auth
 //   X-Client:
 //     value: mcpfleet
+
+// Values returns the literal value of every entry of m, the form agent
+// config files take once apply has resolved secrets; nil when m is empty, so
+// an omitempty field stays out of the file.
+func Values(m map[string]EnvVar) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v.Value
+	}
+	return out
+}
+
+// Literals is the inverse of Values, for reading an agent config back:
+// every entry becomes a literal EnvVar; nil when m is empty.
+func Literals(m map[string]string) map[string]EnvVar {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]EnvVar, len(m))
+	for k, v := range m {
+		out[k] = EnvVar{Value: v}
+	}
+	return out
+}
