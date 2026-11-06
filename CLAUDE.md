@@ -11,9 +11,13 @@ go vet ./...                    # static checks (CI runs this)
 go test ./... -count=1          # unit tests (CI runs them with -v)
 go run ./cmd/mcpfleet           # run the CLI / TUI locally
 goreleaser check                # validate .goreleaser.yml (needs goreleaser installed)
+shellcheck -s sh install.sh scripts/test-install.sh   # lint the install script (CI runs this)
+goreleaser release --snapshot --clean && sh scripts/test-install.sh dist   # test install.sh against snapshot archives (needs python3)
 ```
 
-CI (`.github/workflows/ci.yml`) runs a `gofmt -l .` check (it fails on any unformatted Go file), `go mod tidy`, build, vet and tests on Go 1.23 for every PR to `main`. Run `gofmt -w .` before pushing.
+`install.sh` (POSIX sh) is what the README's `curl … | sh` runs, straight from `main` via `raw.githubusercontent.com`, so a broken commit to it reaches users at once. `scripts/test-install.sh` serves the snapshot archives over a local HTTP server in the GitHub Releases URL layout and points the script at it with `MCPFLEET_REPO_URL`; a fake `uname` selects the platform.
+
+CI (`.github/workflows/ci.yml`) runs a `gofmt -l .` check (it fails on any unformatted Go file), `go mod tidy`, build, vet and tests on Go 1.23 for every PR to `main`, plus the `install-script` jobs: shellcheck and `scripts/test-install.sh` on Ubuntu (dash), Alpine amd64 and arm64 (busybox, `wget` without `curl`, arm64 via QEMU) and macOS. Run `gofmt -w .` before pushing.
 
 ## Commit messages
 
