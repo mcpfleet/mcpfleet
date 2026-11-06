@@ -37,6 +37,17 @@ func (a *Adapter) ConfigPath() string {
 	return configPath(runtime.GOOS, home, os.Getenv)
 }
 
+// path is ConfigPath for reading and writing: it refuses a relative path,
+// which an environment without APPDATA, USERPROFILE or HOME would give, so
+// the config is never resolved against the working directory.
+func (a *Adapter) path() (string, error) {
+	p := a.ConfigPath()
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("claude-desktop: cannot determine config directory (set APPDATA or USERPROFILE)")
+	}
+	return p, nil
+}
+
 // configPath returns claude_desktop_config.json in Claude Desktop's data
 // directory for the given OS, home directory and environment:
 // %APPDATA%\Claude on Windows (%USERPROFILE%\AppData\Roaming\Claude when
@@ -81,16 +92,24 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		}
 		entries[s.Name] = entry
 	}
+	path, err := a.path()
+	if err != nil {
+		return err
+	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(a.ConfigPath(), "mcpServers", entries); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", entries); err != nil {
 		return fmt.Errorf("claude-desktop: %w", err)
 	}
 	return nil
 }
 
 func (a *Adapter) List() ([]schema.Server, error) {
-	data, err := os.ReadFile(a.ConfigPath())
+	path, err := a.path()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("claude-desktop: read config: %w", err)
 	}
