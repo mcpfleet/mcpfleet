@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mcpfleet/mcpfleet/internal/registry"
+	"github.com/mcpfleet/mcpfleet/internal/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -41,14 +42,38 @@ func newListCmd() *cobra.Command {
 			fmt.Fprintln(out)
 
 			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS")
-			fmt.Fprintln(w, "----\t-------\t----")
+			fmt.Fprintln(w, "NAME\tTRANSPORT\tTARGET")
+			fmt.Fprintln(w, "----\t---------\t------")
 			for _, s := range servers {
-				argsStr := strings.Join(s.Args, " ")
-				fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Command, argsStr)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, listTransport(s), listTarget(s))
 			}
 			w.Flush()
 			return nil
 		},
 	}
+}
+
+// listTransport returns the server's transport, treating an empty value as
+// stdio (the registry's default for servers without a transport).
+func listTransport(s schema.Server) string {
+	if s.Transport == "" {
+		return schema.TransportStdio
+	}
+	return s.Transport
+}
+
+// listTarget returns where the server runs: its URL for remote transports,
+// otherwise the command with its arguments. An empty target prints as "-"
+// so the missing value stays visible in the table.
+func listTarget(s schema.Server) string {
+	var target string
+	if s.IsRemote() {
+		target = s.URL
+	} else {
+		target = strings.TrimSpace(s.Command + " " + strings.Join(s.Args, " "))
+	}
+	if target == "" {
+		return "-"
+	}
+	return target
 }
