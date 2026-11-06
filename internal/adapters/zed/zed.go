@@ -23,6 +23,13 @@ type zedSettings struct {
 
 type contextServer struct {
 	Command contextCommand `json:"command"`
+	URL     string         `json:"url,omitempty"` // remote (http) servers only
+}
+
+// remoteServer is the entry Apply writes for a remote server: Zed's HTTP
+// context server, told apart from a local one by its "url" alone.
+type remoteServer struct {
+	URL string `json:"url"`
 }
 
 type contextCommand struct {
@@ -64,6 +71,11 @@ func (a *Adapter) SupportsTransport(transport string) bool {
 // patched in place on its HuJSON syntax tree: comments, formatting and every
 // other setting survive. An unparsable file is an error and is not written.
 func (a *Adapter) Apply(servers []schema.Server) error {
+	given := len(servers)
+	servers = a.writable(servers)
+	if len(servers) == 0 && given > 0 {
+		return nil // every server was skipped: leave the file alone
+	}
 	cfgPath := a.ConfigPath()
 	prev, err := jsonfile.Read(cfgPath)
 	if err != nil {
@@ -101,12 +113,16 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 
 	for _, s := range servers {
-		entry := contextServer{Command: contextCommand{Path: s.Command, Args: s.Args}}
-		if len(s.Env) > 0 {
-			entry.Command.Env = make(map[string]string, len(s.Env))
-			for k, v := range s.Env {
-				entry.Command.Env[k] = v.Value
+		var entry any = remoteServer{URL: s.URL}
+		if !s.IsRemote() {
+			local := contextServer{Command: contextCommand{Path: s.Command, Args: s.Args}}
+			if len(s.Env) > 0 {
+				local.Command.Env = make(map[string]string, len(s.Env))
+				for k, v := range s.Env {
+					local.Command.Env[k] = v.Value
+				}
 			}
+			entry = local
 		}
 		enc, err := jsonfile.Marshal(entry, "", "")
 		if err != nil {
@@ -135,6 +151,19 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		return fmt.Errorf("zed: %w", err)
 	}
 	return nil
+}
+
+// writable returns the servers Apply can write: the ones whose transport Zed
+// supports, without remote servers that have no URL.
+func (a *Adapter) writable(servers []schema.Server) []schema.Server {
+	var out []schema.Server
+	for _, s := range servers {
+		if !a.SupportsTransport(s.Transport) || (s.IsRemote() && s.URL == "") {
+			continue // never write an entry with an empty command
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // layout indents what Apply added or replaced so it matches the rest of the
@@ -281,12 +310,17 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		for k, v := range cs.Command.Env {
 			env[k] = schema.EnvVar{Value: v}
 		}
-		servers = append(servers, schema.Server{
+		srv := schema.Server{
 			Name:    name,
 			Command: cs.Command.Path,
 			Args:    cs.Command.Args,
 			Env:     env,
-		})
+		}
+		if cs.URL != "" && cs.Command.Path == "" {
+			srv.Transport = schema.TransportHTTP
+			srv.URL = cs.URL
+		}
+		servers = append(servers, srv)
 	}
 	return servers, nil
 }

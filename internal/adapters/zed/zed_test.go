@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -158,5 +159,40 @@ func TestApply_CreatesNewSettings(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
 		t.Errorf(".bak created for a new file")
+	}
+}
+
+func TestApply_RemoteHTTPKeepsJSONC(t *testing.T) {
+	path := setup(t, jsoncSettings)
+	err := zed.New().Apply([]schema.Server{
+		{Name: "replace-me", Transport: "http", URL: "https://example.com/mcp"},
+		{Name: "streamed", Transport: "sse", URL: "https://example.com/sse"},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{"// Zed settings", "// fav", "/* servers below */", "// keep me"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("comment %q lost:\n%s", want, data)
+		}
+	}
+	cs, _ := standardize(t, data)["context_servers"].(map[string]any)
+	if got, want := cs["replace-me"], map[string]any{"url": "https://example.com/mcp"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("replace-me = %v, want %v", got, want)
+	}
+	if _, ok := cs["streamed"]; ok {
+		t.Errorf("sse server written although Zed has no SSE transport: %v", cs["streamed"])
+	}
+}
+
+func TestList_MapsRemoteHTTPServers(t *testing.T) {
+	setup(t, `{"context_servers": {"remote": {"url": "https://example.com/mcp", "headers": {"X": "y"}}}}`)
+	got, err := zed.New().List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].Transport != "http" || got[0].URL != "https://example.com/mcp" || got[0].Command != "" {
+		t.Errorf("List = %+v, want one http server at https://example.com/mcp", got)
 	}
 }
