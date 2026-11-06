@@ -43,6 +43,6 @@ func runPull(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write file: %w", err)
 	}
 
-	fmt.Printf("pulled %d server(s) -> %s\n", len(servers), path)
+	fmt.Fprintf(cmd.OutOrStdout(), "pulled %d server(s) -> %s\n", len(servers), path)
 	return nil
 }

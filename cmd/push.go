@@ -49,12 +49,12 @@ func runPush(cmd *cobra.Command, args []string) error {
 			if _, err := client.UpdateServer(cmd.Context(), srv.Name, &s); err != nil {
 				return fmt.Errorf("update server %q: %w", srv.Name, err)
 			}
-			fmt.Printf("updated  %s\n", srv.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "updated  %s\n", srv.Name)
 		} else {
 			if _, err := client.CreateServer(cmd.Context(), &s); err != nil {
 				return fmt.Errorf("create server %q: %w", srv.Name, err)
 			}
-			fmt.Printf("created  %s\n", srv.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "created  %s\n", srv.Name)
 		}
 	}
 	return nil

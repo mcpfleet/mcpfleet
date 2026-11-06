@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -32,15 +31,16 @@ func newListCmd() *cobra.Command {
 				return fmt.Errorf("list servers: %w", err)
 			}
 
+			out := cmd.OutOrStdout()
 			if len(servers) == 0 {
-				fmt.Println("No servers registered.")
+				fmt.Fprintln(out, "No servers registered.")
 				return nil
 			}
 
-			fmt.Println(headerStyle.Render("MCP Servers"))
-			fmt.Println()
+			fmt.Fprintln(out, headerStyle.Render("MCP Servers"))
+			fmt.Fprintln(out)
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tCOMMAND\tARGS")
 			fmt.Fprintln(w, "----\t-------\t----")
 			for _, s := range servers {
