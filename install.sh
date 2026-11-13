@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install mcpfleet from GitHub Releases on Linux or macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
+#   curl -fsSL https://mcpfleet.dev/install.sh | sh
 #
 # Environment:
 #   MCPFLEET_VERSION      version to install (e.g. 0.2.0 or v0.2.0); default: the latest release
