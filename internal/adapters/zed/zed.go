@@ -36,6 +36,13 @@ type contextServer struct {
 	Headers map[string]string `json:"headers,omitempty"` // remote (http) servers only
 }
 
+// managedFields are the entry fields Apply owns, in the order it writes
+// them: an existing entry has them replaced or removed, every other field
+// (e.g. "enabled" or "timeout" set by the user in Zed) is kept. The fields of
+// both transports are listed, so a switch drops the old transport's fields;
+// a "command" in the old nested format is replaced by the flat string.
+var managedFields = []string{"command", "args", "env", "url", "headers"}
+
 // localServer is the flat stdio entry Apply writes.
 type localServer struct {
 	Command string            `json:"command"`
@@ -139,7 +146,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	type patchOp struct {
 		Op    string          `json:"op"`
 		Path  string          `json:"path"`
-		Value json.RawMessage `json:"value"`
+		Value json.RawMessage `json:"value,omitempty"`
 	}
 	var ops []patchOp
 	var cs map[string]json.RawMessage
@@ -151,6 +158,9 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		return fmt.Errorf("zed: parse %s: \"context_servers\" is not a JSON object", cfgPath)
 	}
 
+	// merged holds, per server whose existing entry is patched field by
+	// field, the fields written and whether each existed before.
+	merged := map[string]map[string]bool{}
 	for _, s := range servers {
 		var entry any = remoteServer{URL: s.URL, Headers: schema.Values(s.Headers)}
 		if !s.IsRemote() {
@@ -167,7 +177,29 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		if err != nil {
 			return fmt.Errorf("zed: encode server %q: %w", s.Name, err)
 		}
-		ops = append(ops, patchOp{Op: "add", Path: "/context_servers/" + pointerEscape(s.Name), Value: enc})
+		entryPath := "/context_servers/" + pointerEscape(s.Name)
+		old := objectFields(cs[s.Name])
+		if len(old) == 0 {
+			// New entry, or one that is not an object: write it whole.
+			ops = append(ops, patchOp{Op: "add", Path: entryPath, Value: enc})
+			continue
+		}
+		// Existing entry: replace only the managed fields so the user's own
+		// fields ("enabled", "timeout", ...) and comments survive.
+		next := objectFields(enc)
+		written := map[string]bool{}
+		for _, f := range managedFields {
+			_, had := old[f]
+			v, ok := next[f]
+			switch {
+			case ok:
+				ops = append(ops, patchOp{Op: "add", Path: entryPath + "/" + pointerEscape(f), Value: v})
+				written[f] = had
+			case had:
+				ops = append(ops, patchOp{Op: "remove", Path: entryPath + "/" + pointerEscape(f)})
+			}
+		}
+		merged[s.Name] = written
 	}
 	patch, err := jsonfile.Marshal(ops, "", "")
 	if err != nil {
@@ -182,7 +214,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 		// Nothing to take the indentation from: use Zed's two spaces.
 		defaultIndent = "  "
 	}
-	if err := layout(&v, servers, cs, csAdded, defaultIndent); err != nil {
+	if err := layout(&v, servers, cs, merged, csAdded, defaultIndent); err != nil {
 		return fmt.Errorf("zed: %w", err)
 	}
 
@@ -207,10 +239,12 @@ func (a *Adapter) writable(servers []schema.Server) []schema.Server {
 
 // layout indents what Apply added or replaced so it matches the rest of the
 // file: new members start on their own line at their siblings' indentation
-// and server values are pretty-printed. Comments and untouched members keep
-// their original bytes. A file without line-based indentation (e.g. a
-// one-line object) is left compact unless defaultIndent is set.
-func layout(v *hujson.Value, servers []schema.Server, before map[string]json.RawMessage, csAdded bool, defaultIndent string) error {
+// and new server values are pretty-printed. An entry patched field by field
+// (listed in merged) keeps its bytes; only the fields written into it are
+// laid out. Comments and untouched members keep their original bytes. A file
+// without line-based indentation (e.g. a one-line object) is left compact
+// unless defaultIndent is set.
+func layout(v *hujson.Value, servers []schema.Server, before map[string]json.RawMessage, merged map[string]map[string]bool, csAdded bool, defaultIndent string) error {
 	root, ok := v.Value.(*hujson.Object)
 	if !ok {
 		return nil
@@ -263,25 +297,91 @@ func layout(v *hujson.Value, servers []schema.Server, before map[string]json.Raw
 		if !applied[name] {
 			continue
 		}
+		if fields, ok := merged[name]; ok {
+			if err := layoutFields(m, fields, csIndent+unit, unit); err != nil {
+				return fmt.Errorf("format server %q: %w", name, err)
+			}
+			continue
+		}
 		if before[name] == nil {
 			m.Name.BeforeExtra = onNewLine(m.Name.BeforeExtra, csIndent)
 			m.Value.BeforeExtra = hujson.Extra(" ")
 		}
-		std := m.Value.Clone()
-		std.Standardize()
-		// json.Indent only re-indents; unlike MarshalIndent it does not
-		// escape &, < and >.
-		var pretty bytes.Buffer
-		if err := json.Indent(&pretty, std.Pack(), csIndent, unit); err != nil {
+		if err := pretty(&m.Value, csIndent, unit); err != nil {
 			return fmt.Errorf("format server %q: %w", name, err)
 		}
-		pv, err := hujson.Parse(pretty.Bytes())
-		if err != nil {
-			return fmt.Errorf("format server %q: %w", name, err)
-		}
-		m.Value.Value = pv.Value
 	}
 	return nil
+}
+
+// layoutFields lays out the fields Apply wrote into the existing entry m:
+// fields maps each to whether it existed before. A new field starts on its
+// own line at the indentation of the entry's existing fields; every written
+// value is pretty-printed at that indentation. An entry whose fields are not
+// on their own lines (a one-line object) stays compact. defaultIndent is the
+// field indentation used when no existing field shows one.
+func layoutFields(m *hujson.ObjectMember, fields map[string]bool, defaultIndent, unit string) error {
+	obj, ok := m.Value.Value.(*hujson.Object)
+	if !ok {
+		return nil
+	}
+	indent, multiline := memberIndent(obj, func(name string) bool { _, w := fields[name]; return !w || fields[name] })
+	if !multiline && !bytes.Contains(obj.AfterExtra, []byte("\n")) {
+		for i := range obj.Members {
+			f := &obj.Members[i]
+			if had, ok := fields[memberName(*f)]; ok && !had {
+				f.Name.BeforeExtra = hujson.Extra(" ")
+				f.Value.BeforeExtra = hujson.Extra(" ")
+			}
+		}
+		return nil
+	}
+	if !multiline {
+		indent = defaultIndent
+	}
+	for i := range obj.Members {
+		f := &obj.Members[i]
+		had, ok := fields[memberName(*f)]
+		if !ok {
+			continue
+		}
+		if !had {
+			f.Name.BeforeExtra = onNewLine(f.Name.BeforeExtra, indent)
+			f.Value.BeforeExtra = hujson.Extra(" ")
+		}
+		if err := pretty(&f.Value, indent, unit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pretty replaces the value of v with its standardized form indented by
+// json.Indent, which only re-indents: unlike MarshalIndent it does not
+// escape &, < and >. The extras around v are kept.
+func pretty(v *hujson.Value, prefix, unit string) error {
+	std := v.Clone()
+	std.Standardize()
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, std.Pack(), prefix, unit); err != nil {
+		return err
+	}
+	pv, err := hujson.Parse(buf.Bytes())
+	if err != nil {
+		return err
+	}
+	v.Value = pv.Value
+	return nil
+}
+
+// objectFields decodes raw as a JSON object, or returns nil when raw is
+// missing or not an object.
+func objectFields(raw json.RawMessage) map[string]json.RawMessage {
+	var fields map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &fields) != nil {
+		return nil
+	}
+	return fields
 }
 
 // memberIndent returns the indentation of the first member accepted by keep
