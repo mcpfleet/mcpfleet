@@ -40,8 +40,9 @@ type remoteEntry struct {
 // managedFields are the entry fields Apply owns: they are removed from an
 // existing entry before the new one is laid over it, so the fields of both
 // transports are listed and a switch drops the old transport's fields. Any
-// other field (set by the user in the agent) is kept. "url" is the alias of "serverUrl" that List reads, so a
-// stale one is dropped once "serverUrl" is written.
+// other field (set by the user in the agent) is kept. "url" is the alias of
+// "serverUrl" that List reads, so a stale one is dropped once "serverUrl" is
+// written.
 var managedFields = []string{"type", "command", "args", "env", "serverUrl", "url", "headers"}
 
 // Adapter implements adapters.Adapter for Windsurf.

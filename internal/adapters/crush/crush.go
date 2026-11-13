@@ -45,7 +45,8 @@ const mcpTypeStdio = "stdio"
 // managedFields are the entry fields Apply owns: they are removed from an
 // existing entry before the new one is laid over it, so the fields of both
 // transports are listed and a switch drops the old transport's fields. Any
-// other field (set by the user in the agent) is kept. Crush reads "type" for every transport.
+// other field (set by the user in the agent) is kept. Crush reads "type" for
+// every transport.
 var managedFields = []string{"type", "command", "args", "env", "url", "headers"}
 
 // Adapter implements adapters.Adapter for Crush (charmbracelet/crush).

@@ -26,7 +26,8 @@ type mcpEntry struct {
 // managedFields are the entry fields Apply owns: they are removed from an
 // existing entry before the new one is laid over it, so the fields of both
 // transports are listed and a switch drops the old transport's fields. Any
-// other field (set by the user in the agent) is kept. Claude Desktop only runs local (stdio) servers.
+// other field (set by the user in the agent) is kept. Claude Desktop only
+// runs local (stdio) servers.
 var managedFields = []string{"command", "args", "env"}
 
 // Adapter implements adapters.Adapter for the Claude Desktop app.

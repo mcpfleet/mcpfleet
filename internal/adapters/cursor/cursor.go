@@ -37,8 +37,9 @@ type remoteEntry struct {
 // managedFields are the entry fields Apply owns: they are removed from an
 // existing entry before the new one is laid over it, so the fields of both
 // transports are listed and a switch drops the old transport's fields. Any
-// other field (set by the user in the agent) is kept. Apply writes no "type", but a stale one (e.g. "stdio" on a
-// server that became remote) would contradict the new entry, so it is dropped.
+// other field (set by the user in the agent) is kept. Apply writes no
+// "type", but a stale one (e.g. "stdio" on a server that became remote)
+// would contradict the new entry, so it is dropped.
 var managedFields = []string{"type", "command", "args", "env", "url", "headers"}
 
 // Adapter implements adapters.Adapter for Cursor.

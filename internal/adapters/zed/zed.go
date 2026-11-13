@@ -325,7 +325,11 @@ func layoutFields(m *hujson.ObjectMember, fields map[string]bool, defaultIndent,
 	if !ok {
 		return nil
 	}
-	indent, multiline := memberIndent(obj, func(name string) bool { _, w := fields[name]; return !w || fields[name] })
+	// Take the indentation from a field Apply did not add.
+	indent, multiline := memberIndent(obj, func(name string) bool {
+		had, written := fields[name]
+		return !written || had
+	})
 	if !multiline && !bytes.Contains(obj.AfterExtra, []byte("\n")) {
 		for i := range obj.Members {
 			f := &obj.Members[i]
