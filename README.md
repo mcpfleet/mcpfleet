@@ -23,7 +23,7 @@ You use multiple AI coding agents — Cursor, Claude Code, Claude Desktop, Winds
 
 ```
 new machine setup:
-  curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
+  curl -fsSL https://mcpfleet.dev/install.sh | sh
   mcpfleet auth login
   mcpfleet apply cursor
   # done.
@@ -51,15 +51,19 @@ The formula is a Homebrew cask in the [`mcpfleet/homebrew-tap`](https://github.c
 ### Install script (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
+curl -fsSL https://mcpfleet.dev/install.sh | sh
 ```
 
-The same script will also be served at `https://mcpfleet.dev/install.sh` once the mcpfleet.dev domain goes live; the website republishes it from `main`, so both addresses give the same file.
+The website publishes the script from `main` on every deploy and at least once a day, so it is the same file as in the repository. If mcpfleet.dev is unreachable, or you need a change to `install.sh` from before the daily sync, run it straight from `main` instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
+```
 
 The script picks the archive for your OS and architecture from the latest [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases), checks it against `checksums.txt` and installs `mcpfleet` to `/usr/local/bin` when that directory is writable, otherwise to `~/.local/bin`. It never calls `sudo`. Set `MCPFLEET_VERSION=0.1.0` to install a specific version, or `MCPFLEET_INSTALL_DIR` to choose the directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | MCPFLEET_VERSION=0.1.0 MCPFLEET_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://mcpfleet.dev/install.sh | MCPFLEET_VERSION=0.1.0 MCPFLEET_INSTALL_DIR="$HOME/bin" sh
 ```
 
 The script installs released versions only, so it works once the first release is published; until then it stops with `no mcpfleet release found` and installs nothing. Use `go install` or build from source in the meantime.
