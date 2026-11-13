@@ -20,10 +20,13 @@ import (
 )
 
 const (
-	defaultBaseURL  = "https://registry.mcpfleet.dev"
 	tokenFile       = "token"
 	registryURLFile = "registry_url"
 )
+
+// defaultBaseURL is the registry used when neither MCPFLEET_REGISTRY_URL nor
+// a saved URL is set. A variable so tests can point it at an unreachable host.
+var defaultBaseURL = "https://registry.mcpfleet.dev"
 
 // Sentinel errors matched by APIError through errors.Is.
 var (
@@ -147,6 +150,7 @@ func BaseURL() (string, URLSource) {
 // Client talks to the mcpfleet registry API.
 type Client struct {
 	baseURL    string
+	source     URLSource
 	httpClient *http.Client
 	token      string
 }
@@ -157,9 +161,10 @@ func New() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry: not authenticated — run 'mcpfleet auth login' first")
 	}
-	baseURL, _ := BaseURL()
+	baseURL, source := BaseURL()
 	return &Client{
 		baseURL:    baseURL,
+		source:     source,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		token:      token,
 	}, nil
@@ -188,6 +193,13 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// Nothing answering at the built-in default usually means no
+		// registry was configured; say how to set one.
+		if c.source == SourceDefault && ctx.Err() == nil {
+			return nil, fmt.Errorf("registry: request failed: %w — no registry answers at the default URL %s; "+
+				"point mcpfleet at your registry with 'mcpfleet auth login --url <registry>' or MCPFLEET_REGISTRY_URL",
+				err, c.baseURL)
+		}
 		return nil, fmt.Errorf("registry: request failed: %w", err)
 	}
 	defer resp.Body.Close()
