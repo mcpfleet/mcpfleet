@@ -551,3 +551,70 @@ func TestApply_KeepsUnmanagedEntryFields(t *testing.T) {
 		}
 	})
 }
+
+// stdioType is the "type" each adapter writes for a stdio server ("" when it
+// writes none).
+var stdioType = map[string]string{"claude-code": "stdio", "crush": "stdio"}
+
+// Switching a server between stdio and http drops the fields of the old
+// transport (a stale "command" or "url" would make the agent start the wrong
+// server) and keeps the fields mcpfleet does not manage.
+func TestApply_TransportSwitchDropsOldFields(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		if !a.SupportsTransport("http") {
+			t.Skip("adapter has no http transport")
+		}
+		path := a.ConfigPath()
+		// oldEntry is what the adapter wrote for the old transport, plus a
+		// field it does not manage.
+		oldEntry := func(entry map[string]any) string {
+			entry["extra"] = true
+			enc, err := json.Marshal(map[string]any{key: map[string]any{"srv": entry}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(enc)
+		}
+
+		t.Run("stdio to http", func(t *testing.T) {
+			old := map[string]any{"command": "old", "args": []string{"x"}, "env": map[string]string{"A": "b"}}
+			if tp := stdioType[a.Name()]; tp != "" {
+				old["type"] = tp
+			} else if a.Name() == "cursor" || a.Name() == "windsurf" {
+				old["type"] = "stdio" // stale: these adapters read but never write it
+			}
+			writeConfig(t, path, oldEntry(old), 0o644)
+			srv := schema.Server{Name: "srv", Transport: "http", URL: "https://example.com/mcp",
+				Headers: map[string]schema.EnvVar{"Authorization": {Value: "Bearer tok"}}}
+			if err := a.Apply([]schema.Server{srv}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			entries, _ := readJSON(t, path)[key].(map[string]any)
+			want := remoteEntry[a.Name()]("http", srv.URL, headerValues(srv))
+			want["extra"] = true
+			if got := entries["srv"]; !reflect.DeepEqual(got, want) {
+				t.Errorf("srv = %v, want %v", got, want)
+			}
+		})
+
+		t.Run("http to stdio", func(t *testing.T) {
+			old := remoteEntry[a.Name()]("http", "https://x", map[string]any{"A": "b"})
+			if a.Name() == "windsurf" {
+				old["url"] = "https://x" // the alias of serverUrl that List reads
+			}
+			writeConfig(t, path, oldEntry(old), 0o644)
+			srv := schema.Server{Name: "srv", Command: "npx", Args: []string{"-y", "pkg"}}
+			if err := a.Apply([]schema.Server{srv}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			entries, _ := readJSON(t, path)[key].(map[string]any)
+			want := map[string]any{"command": "npx", "args": []any{"-y", "pkg"}, "extra": true}
+			if tp := stdioType[a.Name()]; tp != "" {
+				want["type"] = tp
+			}
+			if got := entries["srv"]; !reflect.DeepEqual(got, want) {
+				t.Errorf("srv = %v, want %v", got, want)
+			}
+		})
+	})
+}
