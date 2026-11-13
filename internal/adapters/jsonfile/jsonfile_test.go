@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -27,7 +28,7 @@ func decode(t *testing.T, path string) map[string]any {
 func TestUpsertEntries_MissingFileCreatesPrivate(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "a", "b", "cfg.json")
-	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]string{"command": "x"}}); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]string{"command": "x"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	m := decode(t, path)
@@ -86,7 +87,7 @@ func TestUpsertEntries_EmptyOrNullTreatedAsEmpty(t *testing.T) {
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}); err != nil {
+			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, nil); err != nil {
 				t.Fatal(err)
 			}
 			if decode(t, path)["mcpServers"].(map[string]any)["a"] != float64(1) {
@@ -102,7 +103,7 @@ func TestUpsertEntries_ReplacesOnlyNamedEntries(t *testing.T) {
 	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]int{"new": 2}}); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]int{"new": 2}}, []string{"old", "new"}); err != nil {
 		t.Fatal(err)
 	}
 	m := decode(t, path)
@@ -134,7 +135,7 @@ func TestUpsertEntries_InvalidFailsWithoutWrite(t *testing.T) {
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1})
+			err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": 1}, nil)
 			if err == nil || !strings.Contains(err.Error(), "parse "+path) {
 				t.Fatalf("err = %v, want parse error naming the file", err)
 			}
@@ -165,7 +166,7 @@ func TestWriteFile_FollowsSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonfile.UpsertEntries(link, "mcpServers", map[string]any{"a": 1}); err != nil {
+	if err := jsonfile.UpsertEntries(link, "mcpServers", map[string]any{"a": 1}, nil); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(link)
@@ -306,7 +307,7 @@ const relPath = ".cfg/cfg.json"
 func TestUpsertEntries_RefusesRelativePath(t *testing.T) {
 	cwd := t.TempDir()
 	chdir(t, cwd)
-	err := jsonfile.UpsertEntries(relPath, "mcpServers", map[string]any{"a": 1})
+	err := jsonfile.UpsertEntries(relPath, "mcpServers", map[string]any{"a": 1}, nil)
 	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
 		t.Errorf("UpsertEntries(%q) error = %v, want \"refusing relative config path\"", relPath, err)
 	}
@@ -335,5 +336,40 @@ func TestRead_RefusesRelativePath(t *testing.T) {
 	data, err := jsonfile.Read(relPath)
 	if err == nil || !strings.Contains(err.Error(), "refusing relative config path") {
 		t.Errorf("Read(%q) = %q, %v; want \"refusing relative config path\"", relPath, data, err)
+	}
+}
+
+func TestUpsertEntries_MergesIntoExistingEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	orig := `{"mcpServers":{"a":{"command":"old","args":["x"],"env":{"A":"b"},"url":"u","disabled":true,"timeout":30}}}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	managed := []string{"command", "args", "env", "url"}
+	if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]any{"command": "npx"}}, managed); err != nil {
+		t.Fatal(err)
+	}
+	a := decode(t, path)["mcpServers"].(map[string]any)["a"].(map[string]any)
+	want := map[string]any{"command": "npx", "disabled": true, "timeout": float64(30)}
+	if !reflect.DeepEqual(a, want) {
+		t.Errorf("merged entry = %v, want %v (managed fields the new entry lacks are dropped, the rest kept)", a, want)
+	}
+}
+
+func TestUpsertEntries_NonObjectEntryReplaced(t *testing.T) {
+	for name, old := range map[string]string{"null": `null`, "string": `"x"`, "array": `[1]`, "number": `3`} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "cfg.json")
+			if err := os.WriteFile(path, []byte(`{"mcpServers":{"a":`+old+`}}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := jsonfile.UpsertEntries(path, "mcpServers", map[string]any{"a": map[string]any{"command": "npx"}}, []string{"command"}); err != nil {
+				t.Fatal(err)
+			}
+			a := decode(t, path)["mcpServers"].(map[string]any)["a"]
+			if want := map[string]any{"command": "npx"}; !reflect.DeepEqual(a, want) {
+				t.Errorf("entry = %v, want %v", a, want)
+			}
+		})
 	}
 }
