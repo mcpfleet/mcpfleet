@@ -520,3 +520,34 @@ func TestAdapters_RefuseRelativeConfigPath(t *testing.T) {
 		})
 	}
 }
+
+// Fields mcpfleet does not manage (disabled, timeout, autoApprove, ...) are
+// settings the user added in the agent; replacing an entry must keep them
+// and overwrite only the managed fields.
+func TestApply_KeepsUnmanagedEntryFields(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		writeConfig(t, path, `{"`+key+`":{"new-srv":{"command":"old","args":["x"],"env":{"A":"b"},`+
+			`"disabled":true,"timeout":30,"autoApprove":["a"]}}}`, 0o644)
+
+		if err := a.Apply(newServer); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		entries, _ := readJSON(t, path)[key].(map[string]any)
+		entry, _ := entries["new-srv"].(map[string]any)
+		if entry["command"] != "npx" {
+			t.Errorf("command = %v, want npx (entry %v)", entry["command"], entry)
+		}
+		if want := []any{"-y", "pkg"}; !reflect.DeepEqual(entry["args"], want) {
+			t.Errorf("args = %v, want %v", entry["args"], want)
+		}
+		if _, ok := entry["env"]; ok {
+			t.Errorf("env of the old entry kept although the server has none: %v", entry)
+		}
+		for k, want := range map[string]any{"disabled": true, "timeout": float64(30), "autoApprove": []any{"a"}} {
+			if !reflect.DeepEqual(entry[k], want) {
+				t.Errorf("unmanaged field %q = %v, want %v (entry %v)", k, entry[k], want, entry)
+			}
+		}
+	})
+}
