@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -421,4 +422,54 @@ func TestServerPaths_EscapeName(t *testing.T) {
 			})
 		}
 	}
+}
+
+// unreachableURL returns an http URL on which nothing listens.
+func unreachableURL(t *testing.T) string {
+	t.Helper()
+	ts := httptest.NewServer(http.NotFoundHandler())
+	u := ts.URL
+	ts.Close()
+	return u
+}
+
+func TestUnreachableDefault_SaysHowToSetURL(t *testing.T) {
+	setHome(t)
+	require.NoError(t, SaveToken("t"))
+	old := defaultBaseURL
+	defaultBaseURL = unreachableURL(t)
+	t.Cleanup(func() { defaultBaseURL = old })
+
+	c, err := New()
+	require.NoError(t, err)
+	_, err = c.ListServers(context.Background())
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "registry: request failed")
+	assert.ErrorContains(t, err, "no registry answers at the default URL "+defaultBaseURL)
+	assert.ErrorContains(t, err, "mcpfleet auth login --url <registry>")
+	assert.ErrorContains(t, err, "MCPFLEET_REGISTRY_URL")
+}
+
+func TestUnreachableConfiguredURL_NoDefaultHint(t *testing.T) {
+	setHome(t)
+	require.NoError(t, SaveToken("t"))
+	t.Setenv("MCPFLEET_REGISTRY_URL", unreachableURL(t))
+
+	c, err := New()
+	require.NoError(t, err)
+	_, err = c.ListServers(context.Background())
+	assert.ErrorContains(t, err, "registry: request failed")
+	assert.NotContains(t, err.Error(), "default URL")
+}
+
+func TestCanceledContext_NoDefaultHint(t *testing.T) {
+	setHome(t)
+	require.NoError(t, SaveToken("t"))
+	c, err := New()
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = c.ListServers(ctx)
+	assert.ErrorContains(t, err, "registry: request failed")
+	assert.NotContains(t, err.Error(), "default URL")
 }

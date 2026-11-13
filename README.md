@@ -54,6 +54,8 @@ The formula is a Homebrew cask in the [`mcpfleet/homebrew-tap`](https://github.c
 curl -fsSL https://raw.githubusercontent.com/mcpfleet/mcpfleet/main/install.sh | sh
 ```
 
+The same script will also be served at `https://mcpfleet.dev/install.sh` once the mcpfleet.dev domain goes live; the website republishes it from `main`, so both addresses give the same file.
+
 The script picks the archive for your OS and architecture from the latest [GitHub Release](https://github.com/mcpfleet/mcpfleet/releases), checks it against `checksums.txt` and installs `mcpfleet` to `/usr/local/bin` when that directory is writable, otherwise to `~/.local/bin`. It never calls `sudo`. Set `MCPFLEET_VERSION=0.1.0` to install a specific version, or `MCPFLEET_INSTALL_DIR` to choose the directory:
 
 ```bash
@@ -260,6 +262,8 @@ mcpfleet reads its registry URL from:
 1. `MCPFLEET_REGISTRY_URL` environment variable
 2. `~/.config/mcpfleet/registry_url` file
 3. Default: `https://registry.mcpfleet.dev`
+
+No public registry answers at the default URL yet, so point mcpfleet at your own registry (see [Self-hosting](#self-hosting)) with `mcpfleet auth login --url <registry>` or `MCPFLEET_REGISTRY_URL`. When nothing answers at the default URL, commands that talk to the registry fail with an error that says so.
 
 `mcpfleet auth status` shows the URL in use and where it came from:
 
