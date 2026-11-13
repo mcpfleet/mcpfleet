@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"text/tabwriter"
 
@@ -17,7 +19,8 @@ var (
 )
 
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List all MCP servers in your registry",
 		Aliases: []string{"ls"},
@@ -33,6 +36,9 @@ func newListCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
+			if asJSON {
+				return writeServersJSON(out, servers)
+			}
 			if len(servers) == 0 {
 				fmt.Fprintln(out, "No servers registered.")
 				return nil
@@ -51,6 +57,26 @@ func newListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print servers as JSON (secret references only)")
+	return cmd
+}
+
+// writeServersJSON prints servers as an indented JSON array in the shape
+// push reads back: the registry's server body keys, without the id and
+// timestamps, with env and headers as the {"secret": ...} or {"value": ...}
+// entries the registry stores. No vault value is resolved. An empty
+// registry prints [], and HTML characters such as & in URLs stay literal.
+func writeServersJSON(out io.Writer, servers []schema.Server) error {
+	if servers == nil {
+		servers = []schema.Server{}
+	}
+	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(servers); err != nil {
+		return fmt.Errorf("encode servers: %w", err)
+	}
+	return nil
 }
 
 // listTransport returns the server's transport, treating an empty value as
