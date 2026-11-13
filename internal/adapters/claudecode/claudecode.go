@@ -40,6 +40,12 @@ type remoteEntry struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
+// managedFields are the entry fields Apply owns: they are removed from an
+// existing entry before the new one is laid over it, so the fields of both
+// transports are listed and a switch drops the old transport's fields. Any
+// other field (set by the user in the agent) is kept. Claude Code reads "type" for both transports.
+var managedFields = []string{"type", "command", "args", "env", "url", "headers"}
+
 // Adapter implements adapters.Adapter for Claude Code (claude.ai CLI).
 type Adapter struct{}
 
@@ -110,7 +116,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(p, "mcpServers", entries); err != nil {
+	if err := jsonfile.UpsertEntries(p, "mcpServers", entries, managedFields); err != nil {
 		return fmt.Errorf("claude-code: %w", err)
 	}
 	return nil

@@ -23,6 +23,12 @@ type mcpEntry struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
+// managedFields are the entry fields Apply owns: they are removed from an
+// existing entry before the new one is laid over it, so the fields of both
+// transports are listed and a switch drops the old transport's fields. Any
+// other field (set by the user in the agent) is kept. Claude Desktop only runs local (stdio) servers.
+var managedFields = []string{"command", "args", "env"}
+
 // Adapter implements adapters.Adapter for the Claude Desktop app.
 type Adapter struct{}
 
@@ -107,7 +113,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(path, "mcpServers", entries); err != nil {
+	if err := jsonfile.UpsertEntries(path, "mcpServers", entries, managedFields); err != nil {
 		return fmt.Errorf("claude-desktop: %w", err)
 	}
 	return nil
