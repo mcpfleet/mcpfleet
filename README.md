@@ -236,6 +236,7 @@ mcpfleet auth login          Authenticate with the registry
 mcpfleet auth status         Show whether you are logged in and the registry URL in use
 mcpfleet auth logout         Remove the stored token
 mcpfleet list                List all MCP servers in the registry
+  --json                       Print servers as JSON in the push input format (secret references only)
 mcpfleet push <file>         Add or update the server definitions from a YAML file
 mcpfleet pull <file>         Write every server definition from the registry to a YAML file
 mcpfleet apply <agent>       Apply registry servers to an agent config

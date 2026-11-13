@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"text/tabwriter"
 
@@ -17,7 +19,8 @@ var (
 )
 
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List all MCP servers in your registry",
 		Aliases: []string{"ls"},
@@ -33,6 +36,9 @@ func newListCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
+			if asJSON {
+				return writeServersJSON(out, servers)
+			}
 			if len(servers) == 0 {
 				fmt.Fprintln(out, "No servers registered.")
 				return nil
@@ -51,6 +57,26 @@ func newListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print servers as JSON (secret references only)")
+	return cmd
+}
+
+// writeServersJSON prints servers as an indented JSON array in the shape
+// push reads back: the registry's server body keys, without the id and
+// timestamps, with env and headers as the {"secret": ...} or {"value": ...}
+// entries the registry stores. No vault value is resolved. An empty
+// registry prints [], and HTML characters such as & in URLs stay literal.
+func writeServersJSON(out io.Writer, servers []schema.Server) error {
+	if servers == nil {
+		servers = []schema.Server{}
+	}
+	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(servers); err != nil {
+		return fmt.Errorf("encode servers: %w", err)
+	}
+	return nil
 }
 
 // listTransport returns the server's transport, treating an empty value as
@@ -63,17 +89,47 @@ func listTransport(s schema.Server) string {
 }
 
 // listTarget returns where the server runs: its URL for remote transports,
-// otherwise the command with its arguments. An empty target prints as "-"
-// so the missing value stays visible in the table.
+// otherwise the command with its arguments, each quoted like a POSIX shell
+// word so an argument with a space reads as one argument. An empty target
+// prints as "-" so the missing value stays visible in the table.
 func listTarget(s schema.Server) string {
-	var target string
 	if s.IsRemote() {
-		target = s.URL
-	} else {
-		target = strings.TrimSpace(s.Command + " " + strings.Join(s.Args, " "))
+		if s.URL == "" {
+			return "-"
+		}
+		return s.URL
 	}
-	if target == "" {
+	if s.Command == "" && len(s.Args) == 0 {
 		return "-"
 	}
-	return target
+	words := make([]string, 0, 1+len(s.Args))
+	if s.Command != "" {
+		words = append(words, shellQuote(s.Command))
+	}
+	for _, a := range s.Args {
+		words = append(words, shellQuote(a))
+	}
+	return strings.Join(words, " ")
+}
+
+// shellQuote returns s as one POSIX shell word: unchanged when it holds only
+// characters no shell treats specially, otherwise wrapped in single quotes,
+// where each embedded single quote closes the quoting, adds an escaped quote
+// and reopens it. The empty string becomes an empty pair of single quotes.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	for _, r := range s {
+		if !shellSafe(r) {
+			return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+		}
+	}
+	return s
+}
+
+// shellSafe reports whether r needs no quoting in a POSIX shell word.
+func shellSafe(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
+		strings.ContainsRune("@%+=:,./_-", r)
 }
