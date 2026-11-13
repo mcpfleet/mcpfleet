@@ -219,14 +219,15 @@ On Windows, `windsurf` used to write `%APPDATA%\Windsurf\mcp_config.json`, which
 
 `apply` merges into the agent's existing config file instead of replacing it:
 
-- Only the server entries being applied are added or replaced. Every other setting and every other server in the file stays as it was. An applied entry is replaced as a whole, so options you added by hand to a server that mcpfleet manages (for example a timeout or disabled tools) are dropped on the next `apply`.
+- Only the server entries being applied are added or updated. Every other setting and every other server in the file stays as it was.
+- In an entry that already exists, `apply` sets only the fields mcpfleet manages and keeps the rest, so options you added by hand in the agent (for example `disabled`, `autoApprove`, a timeout, or Zed's `enabled`) survive the next `apply`. The managed fields are `command`, `args`, `env`, `url` and `headers`, plus `type` (Claude Code, Cursor, Windsurf, Crush) and `serverUrl` (Windsurf); Claude Desktop manages only `command`, `args` and `env`. A managed field the server no longer has is removed: a server without `env` in the registry loses its old `env`, and a server that switches between local and remote loses the fields of its old transport. `env` and `headers` are replaced as a whole.
 - Before writing, the previous file is saved next to it as `<file>.bak` (for example `~/.cursor/mcp.json.bak`), with the same permissions. Each `apply` overwrites this one backup, so it always holds the state from before the last run.
 - A config file that does not exist yet is created with `0600` permissions (readable by you only), because it holds `env` and `headers` values resolved from the vault. Directories `apply` has to create for it get `0700`. An existing file keeps its permissions, and so do existing directories.
 - An `env` entry of a local server, or a `headers` entry of a remote one, that references a secret (`{secret: github_token}`) is filled from the local vault. If a referenced secret is not in the vault, or the vault cannot be opened, `apply` stops with an error naming the secret and the env variable or header, and writes nothing. Store it with `mcpfleet secret set <name>` and run `apply` again. The `env` of a remote server is not written to any agent, and its secrets are not read.
 - Header values are written as they are. Claude Code expands `${VAR}`, Cursor and Windsurf `${env:NAME}`, and Crush `$VAR` and `$(...)` in them, so a value containing `$` is interpreted by the agent.
 - If the file cannot be parsed (invalid JSON, or the servers key is not an object), `apply` stops with an error and writes nothing. Fix the file and run it again.
 - JSON files are rewritten with 2-space indentation and keys in alphabetical order; the content is the same.
-- Zed's `settings.json` may contain comments and trailing commas. They are kept: only the `context_servers` entries being applied change.
+- Zed's `settings.json` may contain comments and trailing commas. They are kept, also inside an entry being applied: only its managed fields change.
 - The file is written atomically, and a symlinked config (for example from a dotfiles repo) is updated at the link's target.
 
 ## Commands
