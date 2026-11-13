@@ -2,6 +2,7 @@ package claudecode
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -155,4 +156,40 @@ func TestList_MapsRemoteServers(t *testing.T) {
 		"events": {Transport: "sse", URL: "https://example.com/sse"},
 		"remote": {Transport: "http", URL: "https://example.com/mcp"},
 	}, byName)
+}
+
+// TestPath_RelativeClaudeConfigDir names the cause when CLAUDE_CONFIG_DIR is
+// set but relative, instead of asking to set a variable that is already set,
+// and leaves the working directory untouched.
+func TestPath_RelativeClaudeConfigDir(t *testing.T) {
+	isolate(t)
+	cwd := t.TempDir()
+	chdir(t, cwd)
+	rel := filepath.FromSlash("rel/claude")
+	t.Setenv("CLAUDE_CONFIG_DIR", rel)
+	want := fmt.Sprintf("claude-code: CLAUDE_CONFIG_DIR must be an absolute path (got %q)", rel)
+
+	a := New()
+	err := a.Apply([]schema.Server{{Name: "fs", Command: "npx"}})
+	assert.EqualError(t, err, want)
+	_, err = a.List()
+	assert.EqualError(t, err, want)
+
+	entries, err := os.ReadDir(cwd)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing may be created in the working directory")
+}
+
+// chdir switches the working directory for the test and restores it after
+// (t.Chdir needs Go 1.24; CI runs 1.23).
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() {
+		if err := os.Chdir(prev); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
 }

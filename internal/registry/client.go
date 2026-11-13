@@ -31,7 +31,13 @@ var (
 	ErrNotFound = errors.New("registry: not found")
 	// ErrConflict matches a 409 response, e.g. a server name already taken.
 	ErrConflict = errors.New("registry: conflict")
+	// ErrValidation matches a 422 response: the registry rejected the body.
+	ErrValidation = errors.New("registry: validation failed")
 )
+
+// validationFailed is the generic "detail" the registry sends with a 422; the
+// message already says it, so APIError.Error drops it from the detail.
+const validationFailed = "validation failed"
 
 // maxErrorBody caps how much of an error response body is read for detail.
 const maxErrorBody = 64 << 10
@@ -43,29 +49,42 @@ type APIError struct {
 	Detail     string
 }
 
+// Error names the failure for 404, 409 and 422 and gives the status code for
+// any other response, followed by the server's detail.
 func (e *APIError) Error() string {
 	var msg string
+	detail := e.Detail
 	switch e.StatusCode {
 	case http.StatusNotFound:
 		msg = ErrNotFound.Error()
 	case http.StatusConflict:
 		msg = ErrConflict.Error()
+	case http.StatusUnprocessableEntity:
+		msg = ErrValidation.Error()
+		if detail == validationFailed {
+			detail = ""
+		} else {
+			detail = strings.TrimPrefix(detail, validationFailed+": ")
+		}
 	default:
 		msg = fmt.Sprintf("registry: unexpected status %d", e.StatusCode)
 	}
-	if e.Detail != "" {
-		msg += ": " + e.Detail
+	if detail != "" {
+		msg += ": " + detail
 	}
 	return msg
 }
 
-// Is lets errors.Is match ErrNotFound and ErrConflict by status code.
+// Is lets errors.Is match ErrNotFound, ErrConflict and ErrValidation by
+// status code.
 func (e *APIError) Is(target error) bool {
 	switch target {
 	case ErrNotFound:
 		return e.StatusCode == http.StatusNotFound
 	case ErrConflict:
 		return e.StatusCode == http.StatusConflict
+	case ErrValidation:
+		return e.StatusCode == http.StatusUnprocessableEntity
 	}
 	return false
 }

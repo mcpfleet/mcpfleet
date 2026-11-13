@@ -198,7 +198,7 @@ printf '%s' "$GITHUB_TOKEN" | mcpfleet secret set github_token --stdin
 
 | Agent | Config path |
 |-------|-------------|
-| `claude-code` | `~/.claude.json` (`mcpServers`, user scope); `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set |
+| `claude-code` | `~/.claude.json` (`mcpServers`, user scope); `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set (it must be an absolute path) |
 | `claude-desktop` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`; Linux and other systems: `~/.config/Claude/claude_desktop_config.json`, or `$XDG_CONFIG_HOME/Claude/claude_desktop_config.json` when `XDG_CONFIG_HOME` is set |
 | `crush` | `~/.config/crush/crush.json` (`mcp`); `$XDG_CONFIG_HOME/crush/crush.json` when `XDG_CONFIG_HOME` is set; `$CRUSH_GLOBAL_CONFIG/crush.json` when `CRUSH_GLOBAL_CONFIG` is set. The same `~/.config` location is used on Windows (`%USERPROFILE%\.config\crush\crush.json`) |
 | `cursor` | `~/.cursor/mcp.json` |

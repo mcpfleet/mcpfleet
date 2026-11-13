@@ -169,7 +169,7 @@ func TestErrorStatuses(t *testing.T) {
 	}{
 		{http.StatusUnauthorized, "token invalid or expired"},
 		{http.StatusNotFound, "registry: not found"},
-		{http.StatusUnprocessableEntity, "unexpected status 422"},
+		{http.StatusUnprocessableEntity, "registry: validation failed: x"},
 		{http.StatusInternalServerError, "unexpected status 500"},
 		{http.StatusMultipleChoices, "unexpected status 300"},
 	}
@@ -202,6 +202,11 @@ func TestErrorStatuses_IsAndDetail(t *testing.T) {
 		{http.StatusNotFound, `{"detail":"server not found"}`, ErrNotFound, "registry: not found: server not found"},
 		{http.StatusConflict, `{"detail":"server name \"x\" is already taken"}`, ErrConflict, `registry: conflict: server name "x" is already taken`},
 		{http.StatusNotFound, "", ErrNotFound, "registry: not found"},
+		{http.StatusUnprocessableEntity,
+			`{"detail":"validation failed","errors":[{"location":"body.url","message":"url is required for transport sse"}]}`,
+			ErrValidation, "registry: validation failed: body.url: url is required for transport sse"},
+		{http.StatusUnprocessableEntity, `{"detail":"expected required property name"}`,
+			ErrValidation, "registry: validation failed: expected required property name"},
 	}
 	for _, tc := range cases {
 		t.Run(http.StatusText(tc.status)+" "+tc.body, func(t *testing.T) {
@@ -219,6 +224,19 @@ func TestErrorStatuses_IsAndDetail(t *testing.T) {
 	}
 }
 
+// TestErrorStatuses_OtherStatusHasNoSentinel keeps the sentinels tied to their
+// own status codes: a 500 is none of not found, conflict or validation failed.
+func TestErrorStatuses_OtherStatusHasNoSentinel(t *testing.T) {
+	c := newTestClient(t, &recorder{status: http.StatusInternalServerError, body: `{"detail":"validation failed"}`})
+
+	err := c.DeleteServer(context.Background(), "x")
+	require.Error(t, err)
+	assert.EqualError(t, err, "registry: unexpected status 500: validation failed")
+	assert.NotErrorIs(t, err, ErrValidation)
+	assert.NotErrorIs(t, err, ErrNotFound)
+	assert.NotErrorIs(t, err, ErrConflict)
+}
+
 // TestAPIError_ValidationDetails shows each errors[] entry of a 422, so the
 // user learns which field the registry rejected and why.
 func TestAPIError_ValidationDetails(t *testing.T) {
@@ -229,16 +247,16 @@ func TestAPIError_ValidationDetails(t *testing.T) {
 	}{
 		{"one entry",
 			`{"detail":"validation failed","errors":[{"location":"body.url","message":"url is required for transport sse","value":""}]}`,
-			"registry: unexpected status 422: validation failed: body.url: url is required for transport sse"},
+			"registry: validation failed: body.url: url is required for transport sse"},
 		{"two entries",
 			`{"detail":"validation failed","errors":[{"location":"body.command","message":"command is required for transport stdio"},{"location":"body.url","message":"url is only used for transport http or sse"}]}`,
-			"registry: unexpected status 422: validation failed: body.command: command is required for transport stdio; body.url: url is only used for transport http or sse"},
+			"registry: validation failed: body.command: command is required for transport stdio; body.url: url is only used for transport http or sse"},
 		{"entry without location",
 			`{"detail":"validation failed","errors":[{"message":"bad body"}]}`,
-			"registry: unexpected status 422: validation failed: bad body"},
+			"registry: validation failed: bad body"},
 		{"no entries",
 			`{"detail":"validation failed"}`,
-			"registry: unexpected status 422: validation failed"},
+			"registry: validation failed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
