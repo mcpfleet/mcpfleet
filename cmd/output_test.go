@@ -144,3 +144,43 @@ func TestList_WritesToCommandOut(t *testing.T) {
 		assert.Equal(t, "No servers registered.\n", stdout.String())
 	})
 }
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"-y", "-y"},
+		{"@scope/pkg", "@scope/pkg"},
+		{"--flag=x", "--flag=x"},
+		{"my dir", "'my dir'"},
+		{"it's", `'it'\''s'`},
+		{"", "''"},
+		{"$HOME", "'$HOME'"},
+		{"~/x", "'~/x'"},
+		{`a"b`, `'a"b'`},
+		{"--flag=x y", "'--flag=x y'"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, shellQuote(tt.in), "shellQuote(%q)", tt.in)
+	}
+}
+
+func TestList_QuotesArgs(t *testing.T) {
+	fakeRegistry(t, map[string]struct {
+		status int
+		body   string
+	}{
+		"GET /v1/servers": {http.StatusOK, `[
+			{"name":"fs","command":"npx","args":["-y","fs","my dir","it's",""]},
+			{"name":"local","command":"/opt/my tools/srv","args":["--root=/tmp"]},
+			{"name":"api","transport":"http","url":"https://example.com/mcp?a=1&b=2"}
+		]`},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runForTest(t, []string{"list"}, &stdout, &stderr)
+	require.Equal(t, 0, code, stderr.String())
+
+	out := stdout.String()
+	assert.Contains(t, out, `npx -y fs 'my dir' 'it'\''s' ''`+"\n")
+	assert.Contains(t, out, `'/opt/my tools/srv' --root=/tmp`+"\n")
+	assert.Contains(t, out, "https://example.com/mcp?a=1&b=2\n", "a URL is not quoted")
+}
