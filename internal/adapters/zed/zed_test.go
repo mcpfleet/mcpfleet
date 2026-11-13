@@ -228,3 +228,37 @@ func TestApply_ReplacesNestedEntryWithFlat(t *testing.T) {
 		t.Errorf("nested command left behind:\n%s", out)
 	}
 }
+
+// Settings the user added to an entry in Zed ("enabled", "timeout") and the
+// comments inside it survive apply; only the managed fields change.
+func TestApply_KeepsEnabledTimeoutAndComments(t *testing.T) {
+	path := setup(t, `{
+  "context_servers": {
+    "gh": { // my server
+      "enabled": false, // off
+      "command": {"path": "old", "args": ["x"]},
+      "timeout": 60,
+      "env": {"A": "b"},
+    },
+  },
+}
+`)
+	if err := zed.New().Apply([]schema.Server{{Name: "gh", Command: "npx", Args: []string{"-y", "gh"}}}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	text := string(out)
+	for _, want := range []string{"// my server", `"enabled": false, // off`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("%q lost:\n%s", want, text)
+		}
+	}
+	cs, _ := standardize(t, out)["context_servers"].(map[string]any)
+	want := map[string]any{"command": "npx", "args": []any{"-y", "gh"}, "enabled": false, "timeout": float64(60)}
+	if got := cs["gh"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("gh = %v, want %v", got, want)
+	}
+	if !strings.Contains(text, "\n      \"args\": [\n        \"-y\",") {
+		t.Errorf("added field not indented like its siblings:\n%s", text)
+	}
+}

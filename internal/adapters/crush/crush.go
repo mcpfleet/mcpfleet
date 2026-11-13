@@ -42,6 +42,13 @@ type remoteEntry struct {
 // mcpTypeStdio is Crush's type for a server started as a local command.
 const mcpTypeStdio = "stdio"
 
+// managedFields are the entry fields Apply owns: they are removed from an
+// existing entry before the new one is laid over it, so the fields of both
+// transports are listed and a switch drops the old transport's fields. Any
+// other field (set by the user in the agent) is kept. Crush reads "type" for
+// every transport.
+var managedFields = []string{"type", "command", "args", "env", "url", "headers"}
+
 // Adapter implements adapters.Adapter for Crush (charmbracelet/crush).
 type Adapter struct{}
 
@@ -120,7 +127,7 @@ func (a *Adapter) Apply(servers []schema.Server) error {
 	}
 	// Merge into the existing file: only the entries named above change;
 	// other keys and servers are kept, and an unparsable file is an error.
-	if err := jsonfile.UpsertEntries(p, "mcp", entries); err != nil {
+	if err := jsonfile.UpsertEntries(p, "mcp", entries, managedFields); err != nil {
 		return fmt.Errorf("crush: %w", err)
 	}
 	return nil

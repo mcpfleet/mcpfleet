@@ -55,12 +55,19 @@ func RequireAbs(agent, path string, vars ...string) (string, error) {
 // UpsertEntries sets entries[name] under the top-level object key of the
 // JSON file at path, leaving every other key and every other entry intact.
 //
+// An existing entry that is a JSON object is merged rather than replaced:
+// the fields listed in managed are removed from it, then the fields of the
+// new entry are set. Fields mcpfleet does not manage (e.g. "disabled" or
+// "timeout" added by the user in the agent) survive, while a managed field
+// the new entry lacks (an omitted "env", the "url" of a former remote
+// server) is dropped. An existing entry that is not an object is replaced.
+//
 // A missing file, an empty file, or a missing/null key count as empty. A file
 // that is not valid JSON, whose root is not an object, or whose key is not an
 // object yields an error and the file is left untouched. A new file is
 // created with NewFileMode; an existing file keeps its mode. A relative path
 // is an error.
-func UpsertEntries(path, key string, entries map[string]any) error {
+func UpsertEntries(path, key string, entries map[string]any, managed []string) error {
 	prev, err := Read(path)
 	if err != nil {
 		return err
@@ -88,7 +95,11 @@ func UpsertEntries(path, key string, entries map[string]any) error {
 		if err != nil {
 			return fmt.Errorf("encode entry %q: %w", name, err)
 		}
-		section[name] = enc
+		merged, err := mergeEntry(section[name], enc, managed)
+		if err != nil {
+			return fmt.Errorf("encode entry %q: %w", name, err)
+		}
+		section[name] = merged
 	}
 	encSection, err := Marshal(section, "", "")
 	if err != nil {
@@ -101,6 +112,27 @@ func UpsertEntries(path, key string, entries map[string]any) error {
 		return fmt.Errorf("encode %s: %w", path, err)
 	}
 	return WriteFile(path, out, prev)
+}
+
+// mergeEntry returns enc laid over old with the managed fields of old
+// removed first. When old is missing or not a JSON object, or enc is not an
+// object, enc is returned unchanged.
+func mergeEntry(old, enc json.RawMessage, managed []string) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if len(old) == 0 || json.Unmarshal(old, &fields) != nil || fields == nil {
+		return enc, nil
+	}
+	var next map[string]json.RawMessage
+	if json.Unmarshal(enc, &next) != nil || next == nil {
+		return enc, nil
+	}
+	for _, f := range managed {
+		delete(fields, f)
+	}
+	for f, v := range next {
+		fields[f] = v
+	}
+	return Marshal(fields, "", "")
 }
 
 // Marshal encodes v like json.MarshalIndent, but leaves &, < and > as they

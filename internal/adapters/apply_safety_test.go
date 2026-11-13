@@ -520,3 +520,101 @@ func TestAdapters_RefuseRelativeConfigPath(t *testing.T) {
 		})
 	}
 }
+
+// Fields mcpfleet does not manage (disabled, timeout, autoApprove, ...) are
+// settings the user added in the agent; replacing an entry must keep them
+// and overwrite only the managed fields.
+func TestApply_KeepsUnmanagedEntryFields(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		path := a.ConfigPath()
+		writeConfig(t, path, `{"`+key+`":{"new-srv":{"command":"old","args":["x"],"env":{"A":"b"},`+
+			`"disabled":true,"timeout":30,"autoApprove":["a"]}}}`, 0o644)
+
+		if err := a.Apply(newServer); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		entries, _ := readJSON(t, path)[key].(map[string]any)
+		entry, _ := entries["new-srv"].(map[string]any)
+		if entry["command"] != "npx" {
+			t.Errorf("command = %v, want npx (entry %v)", entry["command"], entry)
+		}
+		if want := []any{"-y", "pkg"}; !reflect.DeepEqual(entry["args"], want) {
+			t.Errorf("args = %v, want %v", entry["args"], want)
+		}
+		if _, ok := entry["env"]; ok {
+			t.Errorf("env of the old entry kept although the server has none: %v", entry)
+		}
+		for k, want := range map[string]any{"disabled": true, "timeout": float64(30), "autoApprove": []any{"a"}} {
+			if !reflect.DeepEqual(entry[k], want) {
+				t.Errorf("unmanaged field %q = %v, want %v (entry %v)", k, entry[k], want, entry)
+			}
+		}
+	})
+}
+
+// stdioType is the "type" each adapter writes for a stdio server ("" when it
+// writes none).
+var stdioType = map[string]string{"claude-code": "stdio", "crush": "stdio"}
+
+// Switching a server between stdio and http drops the fields of the old
+// transport (a stale "command" or "url" would make the agent start the wrong
+// server) and keeps the fields mcpfleet does not manage.
+func TestApply_TransportSwitchDropsOldFields(t *testing.T) {
+	forEachAdapter(t, func(t *testing.T, a adapters.Adapter, key string) {
+		if !a.SupportsTransport("http") {
+			t.Skip("adapter has no http transport")
+		}
+		path := a.ConfigPath()
+		// oldEntry is what the adapter wrote for the old transport, plus a
+		// field it does not manage.
+		oldEntry := func(entry map[string]any) string {
+			entry["extra"] = true
+			enc, err := json.Marshal(map[string]any{key: map[string]any{"srv": entry}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(enc)
+		}
+
+		t.Run("stdio to http", func(t *testing.T) {
+			old := map[string]any{"command": "old", "args": []string{"x"}, "env": map[string]string{"A": "b"}}
+			if tp := stdioType[a.Name()]; tp != "" {
+				old["type"] = tp
+			} else if a.Name() == "cursor" || a.Name() == "windsurf" {
+				old["type"] = "stdio" // stale: these adapters read but never write it
+			}
+			writeConfig(t, path, oldEntry(old), 0o644)
+			srv := schema.Server{Name: "srv", Transport: "http", URL: "https://example.com/mcp",
+				Headers: map[string]schema.EnvVar{"Authorization": {Value: "Bearer tok"}}}
+			if err := a.Apply([]schema.Server{srv}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			entries, _ := readJSON(t, path)[key].(map[string]any)
+			want := remoteEntry[a.Name()]("http", srv.URL, headerValues(srv))
+			want["extra"] = true
+			if got := entries["srv"]; !reflect.DeepEqual(got, want) {
+				t.Errorf("srv = %v, want %v", got, want)
+			}
+		})
+
+		t.Run("http to stdio", func(t *testing.T) {
+			old := remoteEntry[a.Name()]("http", "https://x", map[string]any{"A": "b"})
+			if a.Name() == "windsurf" {
+				old["url"] = "https://x" // the alias of serverUrl that List reads
+			}
+			writeConfig(t, path, oldEntry(old), 0o644)
+			srv := schema.Server{Name: "srv", Command: "npx", Args: []string{"-y", "pkg"}}
+			if err := a.Apply([]schema.Server{srv}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			entries, _ := readJSON(t, path)[key].(map[string]any)
+			want := map[string]any{"command": "npx", "args": []any{"-y", "pkg"}, "extra": true}
+			if tp := stdioType[a.Name()]; tp != "" {
+				want["type"] = tp
+			}
+			if got := entries["srv"]; !reflect.DeepEqual(got, want) {
+				t.Errorf("srv = %v, want %v", got, want)
+			}
+		})
+	})
+}
