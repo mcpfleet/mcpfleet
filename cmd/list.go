@@ -63,17 +63,47 @@ func listTransport(s schema.Server) string {
 }
 
 // listTarget returns where the server runs: its URL for remote transports,
-// otherwise the command with its arguments. An empty target prints as "-"
-// so the missing value stays visible in the table.
+// otherwise the command with its arguments, each quoted like a POSIX shell
+// word so an argument with a space reads as one argument. An empty target
+// prints as "-" so the missing value stays visible in the table.
 func listTarget(s schema.Server) string {
-	var target string
 	if s.IsRemote() {
-		target = s.URL
-	} else {
-		target = strings.TrimSpace(s.Command + " " + strings.Join(s.Args, " "))
+		if s.URL == "" {
+			return "-"
+		}
+		return s.URL
 	}
-	if target == "" {
+	if s.Command == "" && len(s.Args) == 0 {
 		return "-"
 	}
-	return target
+	words := make([]string, 0, 1+len(s.Args))
+	if s.Command != "" {
+		words = append(words, shellQuote(s.Command))
+	}
+	for _, a := range s.Args {
+		words = append(words, shellQuote(a))
+	}
+	return strings.Join(words, " ")
+}
+
+// shellQuote returns s as one POSIX shell word: unchanged when it holds only
+// characters no shell treats specially, otherwise wrapped in single quotes,
+// where each embedded single quote closes the quoting, adds an escaped quote
+// and reopens it. The empty string becomes an empty pair of single quotes.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	for _, r := range s {
+		if !shellSafe(r) {
+			return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+		}
+	}
+	return s
+}
+
+// shellSafe reports whether r needs no quoting in a POSIX shell word.
+func shellSafe(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
+		strings.ContainsRune("@%+=:,./_-", r)
 }
