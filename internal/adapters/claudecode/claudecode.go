@@ -59,8 +59,12 @@ func (a *Adapter) ConfigPath() string {
 
 // path is ConfigPath for reading and writing: it refuses a relative path,
 // which an empty home directory or a relative CLAUDE_CONFIG_DIR gives, so the
-// config is never resolved against the working directory.
+// config is never resolved against the working directory. A relative
+// CLAUDE_CONFIG_DIR is named as the cause, since the variable is set.
 func (a *Adapter) path() (string, error) {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" && !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("%s: CLAUDE_CONFIG_DIR must be an absolute path (got %q)", a.Name(), dir)
+	}
 	return jsonfile.RequireAbs(a.Name(), a.ConfigPath(), jsonfile.HomeVar(runtime.GOOS), "CLAUDE_CONFIG_DIR")
 }
 
