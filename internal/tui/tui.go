@@ -80,6 +80,8 @@ const (
 	dashboardTab tabView = iota
 	serversTab
 	adaptersTab
+	skillsTab
+	tabCount
 )
 
 type model struct {
@@ -90,6 +92,18 @@ type model struct {
 	adapters  []adapters.Adapter
 	err       error
 	ready     bool
+
+	// Skills tab.
+	backend      SkillBackend
+	skills       SkillsData
+	skillsErr    error
+	skillsReady  bool
+	skillRow     int
+	skillAgent   int
+	applying     bool
+	confirm      *skillTarget // set while the overwrite question is open
+	skillNote    string       // result of the last action
+	skillNoteErr bool
 }
 
 type initDataMsg struct {
@@ -97,15 +111,16 @@ type initDataMsg struct {
 	adapters []adapters.Adapter
 }
 
-func initialModel() model {
+func newModel(backend SkillBackend) model {
 	return model{
 		activeTab: dashboardTab,
 		ready:     false,
+		backend:   backend,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return loadData
+	return tea.Batch(loadData, m.loadSkills())
 }
 
 func loadData() tea.Msg {
@@ -133,17 +148,25 @@ func loadData() tea.Msg {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))):
+		if key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))) {
 			return m, tea.Quit
+		}
+		if m.confirm != nil {
+			return m.updateConfirmKey(msg.String())
+		}
+		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
-			m.activeTab = (m.activeTab + 1) % 3
+			m.activeTab = (m.activeTab + 1) % tabCount
 		case key.Matches(msg, key.NewBinding(key.WithKeys("1"))):
 			m.activeTab = dashboardTab
 		case key.Matches(msg, key.NewBinding(key.WithKeys("2"))):
 			m.activeTab = serversTab
 		case key.Matches(msg, key.NewBinding(key.WithKeys("3"))):
 			m.activeTab = adaptersTab
+		case key.Matches(msg, key.NewBinding(key.WithKeys("4"))):
+			m.activeTab = skillsTab
+		case m.activeTab == skillsTab:
+			return m.updateSkillsKey(msg.String())
 		}
 
 	case tea.WindowSizeMsg:
@@ -154,6 +177,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.servers = msg.servers
 		m.adapters = msg.adapters
 		m.ready = true
+
+	case skillsLoadedMsg:
+		return m.skillsLoaded(msg), nil
+
+	case skillAppliedMsg:
+		return m.skillApplied(msg)
 	}
 
 	return m, nil
@@ -178,7 +207,7 @@ func (m model) View() string {
 	b.WriteString("\n\n")
 
 	// Tabs
-	tabs := []string{"Dashboard", "Servers", "Adapters"}
+	tabs := []string{"Dashboard", "Servers", "Adapters", "Skills"}
 	var renderedTabs []string
 	for i, tab := range tabs {
 		if tabView(i) == m.activeTab {
@@ -198,13 +227,17 @@ func (m model) View() string {
 		b.WriteString(m.renderServers())
 	case adaptersTab:
 		b.WriteString(m.renderAdapters())
+	case skillsTab:
+		b.WriteString(m.renderSkills())
 	}
 
 	// Footer with keybindings
 	b.WriteString("\n\n")
-	keybindings := footerStyle.Render(
-		"[tab] switch tabs • [1-3] quick switch • [q] quit",
-	)
+	help := "[tab] switch tabs • [1-4] quick switch • [q] quit"
+	if m.activeTab == skillsTab {
+		help = "[↑/↓] skill • [←/→] agent • [a] apply • " + help
+	}
+	keybindings := footerStyle.Render(help)
 	b.WriteString(keybindings)
 
 	return b.String()
@@ -293,9 +326,9 @@ func (m model) renderAdapters() string {
 	return b.String()
 }
 
-// Run starts the TUI
-func Run() error {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+// Run starts the TUI; backend serves the Skills tab.
+func Run(backend SkillBackend) error {
+	p := tea.NewProgram(newModel(backend), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
