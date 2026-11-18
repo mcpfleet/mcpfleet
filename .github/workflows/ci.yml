@@ -62,6 +62,11 @@ jobs:
       - name: Compare verdicts with skills-ref
         run: sh scripts/skills-ref-parity.sh
 
+      - name: Round trip push -> pull passes skills-ref
+        env:
+          MCPFLEET_REQUIRE_SKILLS_REF: '1'
+        run: go test ./cmd -run '^TestSkillRoundTrip$' -count=1 -v
+
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
