@@ -119,3 +119,14 @@ func TestParse_SetsSHA256(t *testing.T) {
 	assert.Equal(t, hashOf(t, dir), s.SHA256)
 	assert.Regexp(t, `^[0-9a-f]{64}$`, s.SHA256)
 }
+
+func TestHash_FollowsSymlinkedRoot(t *testing.T) {
+	// A skill directory is often linked into an agent's skills folder; the
+	// link itself is the skill, only links inside it are rejected.
+	target := writeTree(t, file{"SKILL.md", 0o644, "a\n"})
+	link := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	assert.Equal(t, hashOf(t, target), hashOf(t, link))
+}

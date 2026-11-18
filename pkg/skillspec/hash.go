@@ -24,25 +24,32 @@ import (
 //     not; <length> is the decimal byte count of <content>;
 //   - directories are not hashed themselves, so an empty one adds nothing.
 //
-// A symlink or any other non-regular file is an error.
+// dir itself may be a symlink to the skill directory; a symlink or any other
+// non-regular file inside it is an error.
 func Hash(dir string) (string, error) {
 	type entry struct {
 		rel  string
 		abs  string
 		mode string
 	}
+	// The skill directory itself may be a symlink (a skill linked into an
+	// agent's skills folder); only links inside it are rejected.
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
 	var entries []entry
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" && path != dir {
+			if d.Name() == ".git" && path != root {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(dir, path)
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
