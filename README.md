@@ -296,6 +296,8 @@ mcpfleet apply --all-skills --tag dev claude-code
 - mcpfleet records the hash of every skill it installs in `~/.config/mcpfleet/skills-state.json`, never inside the skill directory. On the next `apply`, a skill that is already current is left alone. A copy that is unchanged since the last `apply` is replaced with the registry's version. A copy you edited, or one mcpfleet did not install, is left alone and reported as `conflict: skill <name> at <path> was changed locally …`, and `apply` exits with 1 after applying everything else. `--force` replaces it.
 - An agent without skills support still gets the required servers, and `apply` prints `warning: agent <agent> does not support skills, skipping skill <name>`.
 
+Running `mcpfleet` without a command opens the TUI. Its **Skills** tab (key `4`) lists the registry's skills with the servers they require and their state on every agent: `installed`, `not installed`, `out of date` (unchanged since the last `apply`, the registry has a newer version), `modified locally`, `not spec-conformant`, or `no skills support` (agents `apply` installs no skills on yet). Pick a skill with `↑`/`↓` and an agent with `←`/`→`, then press `a` to install the skill there with the servers it requires; unlike `apply`, the TUI writes only those servers. A skill that was changed locally is not replaced until you answer `y` to the overwrite question, which then acts like `--force`.
+
 Agents and their native Agent Skills support:
 
 | Agent | Native Agent Skills | User-level skills directory | `apply --skill` |
