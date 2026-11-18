@@ -1,0 +1,13 @@
+# The server the e2e fixture skill gh-notes requires. It references no
+# secret: the vault keeps its key in the OS keyring, which CI runners lack.
+- name: github
+  transport: stdio
+  install:
+    type: npx
+    package: "@modelcontextprotocol/server-github"
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-github"]
+  env:
+    GITHUB_API_URL:
+      value: https://api.github.com
+  tags: [vcs]
