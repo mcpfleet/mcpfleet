@@ -253,12 +253,15 @@ mcpfleet secret set <name>   Store or update a secret in the local vault (hidden
   --stdin                      Read the value from standard input
 mcpfleet secret list         List secret names (never values)
 mcpfleet secret rm <name>    Remove a secret from the local vault
+mcpfleet skill validate <dir>  Check an Agent Skills directory against the spec (exit 1 on any error)
 
 Global flags:
   -v, --verbose                Print debug logs to stderr
 ```
 
 Without `--verbose`, commands print only warnings and errors to stderr; their results go to stdout.
+
+`mcpfleet skill validate` checks a skill directory against the [Agent Skills specification](https://agentskills.io/specification) and gives the same verdict as the reference validator `skills-ref`. It prints one line per violation (`error: name: must match the directory name "my-skill" (got "other")`) and exits with 1. Recommendations of the spec, such as keeping `SKILL.md` under 500 lines, are printed as `warning: …` and keep exit code 0.
 
 ## Configuration
 
