@@ -39,7 +39,7 @@ Examples:
 	},
 	// When no subcommand is provided, show the TUI
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.Run()
+		return tui.Run(tuiSkills{})
 	},
 }
 

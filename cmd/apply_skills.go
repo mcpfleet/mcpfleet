@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/spf13/cobra"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters"
 	"github.com/mcpfleet/mcpfleet/internal/adapters/skilldir"
@@ -112,14 +112,51 @@ func loadSkillState() (*skillstate.State, error) {
 	return skillstate.Load(filepath.Join(dir, skillstate.FileName))
 }
 
+// Hashes localSkillHash gives a path that holds something other than a
+// skill Decide can compare: they match no registry hash and no recorded
+// one, so the local copy is a conflict.
+const (
+	unreadableSkill = "unreadable"
+	notASkillDir    = "not a skill directory"
+)
+
+// localSkillHash returns the local hash skillstate.Decide compares for the
+// skill name, whose directory is target, given the skills the agent lists:
+// "" when nothing is at target, the listed skill's hash, or a placeholder
+// for a listed skill without a hash or a path that is not a skill directory.
+func localSkillHash(local map[string]skilldir.InstalledSkill, target, name string) (string, error) {
+	if s, ok := local[name]; ok {
+		if s.SHA256 == "" {
+			return unreadableSkill, nil
+		}
+		return s.SHA256, nil
+	}
+	if _, err := os.Lstat(target); err == nil {
+		return notASkillDir, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	return "", nil
+}
+
+// skillConflictError is the error of an apply that left n skills alone
+// because they were changed locally; it is skillstate.ErrConflict.
+type skillConflictError int
+
+func (n skillConflictError) Error() string {
+	return fmt.Sprintf("%d skill conflict(s); nothing was changed for them", int(n))
+}
+
+func (skillConflictError) Is(target error) bool { return target == skillstate.ErrConflict }
+
 // applySkills installs plan on adapter following skillstate.Decide, records
-// what it installed in state and reports each skill. A conflict leaves the
-// local copy alone; any conflict makes the result an error.
-func applySkills(cmd *cobra.Command, adapter adapters.Adapter, plan []plannedSkill, state *skillstate.State, force bool) error {
+// what it installed in state and reports each skill to out (errOut for
+// warnings and conflicts). A conflict leaves the local copy alone; any
+// conflict makes the result an error that is skillstate.ErrConflict.
+func applySkills(out, errOut io.Writer, adapter adapters.Adapter, plan []plannedSkill, state *skillstate.State, force bool) error {
 	if len(plan) == 0 {
 		return nil
 	}
-	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	agent := adapter.Name()
 	sa, ok := adapter.(adapters.SkillAdapter)
 	if !ok {
@@ -143,20 +180,13 @@ func applySkills(cmd *cobra.Command, adapter adapters.Adapter, plan []plannedSki
 	for _, p := range plan {
 		name := p.skill.Name
 		target := filepath.Join(sa.SkillsDir(), name)
-		localHash := ""
-		if s, ok := local[name]; ok {
-			if s.HashErr != nil && !force {
-				conflicts++
-				fmt.Fprintf(errOut, "conflict: skill %s at %s cannot be compared with the registry (%v); use --force to replace it\n", name, target, s.HashErr)
-				continue
-			}
-			localHash = s.SHA256
-			if localHash == "" {
-				localHash = "unreadable"
-			}
-		} else if _, err := os.Lstat(target); err == nil {
-			localHash = "not a skill directory"
-		} else if !errors.Is(err, fs.ErrNotExist) {
+		if s, ok := local[name]; ok && s.HashErr != nil && !force {
+			conflicts++
+			fmt.Fprintf(errOut, "conflict: skill %s at %s cannot be compared with the registry (%v); use --force to replace it\n", name, target, s.HashErr)
+			continue
+		}
+		localHash, err := localSkillHash(local, target, name)
+		if err != nil {
 			return err
 		}
 
@@ -188,7 +218,7 @@ func applySkills(cmd *cobra.Command, adapter adapters.Adapter, plan []plannedSki
 		return failed
 	}
 	if conflicts > 0 {
-		return fmt.Errorf("%d skill conflict(s); nothing was changed for them", conflicts)
+		return skillConflictError(conflicts)
 	}
 	return nil
 }

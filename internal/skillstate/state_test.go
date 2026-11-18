@@ -72,3 +72,31 @@ func TestLoad_CorruptFileIsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), path)
 }
+
+func TestStatusOf(t *testing.T) {
+	tests := []struct {
+		name                 string
+		local, state, remote string
+		want                 Status
+	}{
+		{"no local copy", "", "", "r", NotInstalled},
+		{"local copy is the registry's", "r", "s", "r", UpToDate},
+		{"unchanged since last apply, registry moved on", "s", "s", "r", OutOfDate},
+		{"changed since last apply", "l", "s", "r", Modified},
+		{"local copy mcpfleet never installed", "l", "", "r", Modified},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, StatusOf(tt.local, tt.state, tt.remote))
+		})
+	}
+}
+
+func TestStatusString(t *testing.T) {
+	assert.Equal(t, "not installed", NotInstalled.String())
+	assert.Equal(t, "installed", UpToDate.String())
+	assert.Equal(t, "out of date", OutOfDate.String())
+	assert.Equal(t, "modified locally", Modified.String())
+	assert.Equal(t, "not spec-conformant", NotConformant.String())
+	assert.Equal(t, "no skills support", Unsupported.String())
+}

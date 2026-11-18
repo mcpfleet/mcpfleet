@@ -149,7 +149,7 @@ Examples:
 			fmt.Fprintf(cmd.OutOrStdout(), "\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
 
 			// 7. Install the skills.
-			return applySkills(cmd, adapter, plan, state, force)
+			return applySkills(cmd.OutOrStdout(), cmd.ErrOrStderr(), adapter, plan, state, force)
 		},
 	}
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Filter servers by tag (can be used multiple times)")
