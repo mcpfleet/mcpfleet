@@ -14,6 +14,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/tailscale/hujson v0.0.0-20250605163823-992244df8c5a
 	github.com/zalando/go-keyring v0.2.6
+	golang.org/x/text v0.18.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -47,5 +48,4 @@ require (
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
 )
