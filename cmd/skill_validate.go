@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -21,23 +22,33 @@ SKILL.md under 500 lines, are printed as "warning: …" and keep exit code 0.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
-			res := skillspec.Validate(dir)
-			out := cmd.OutOrStdout()
-			for _, v := range res.Errors {
-				fmt.Fprintf(out, "error: %s\n", v.Error())
+			if err := validateSkill(cmd.OutOrStdout(), dir); err != nil {
+				return err
 			}
-			for _, v := range res.Warnings {
-				fmt.Fprintf(out, "warning: %s\n", v.Error())
-			}
-			if !res.Valid() {
-				noun := "errors"
-				if len(res.Errors) == 1 {
-					noun = "error"
-				}
-				return fmt.Errorf("%s is not a valid skill (%d %s)", dir, len(res.Errors), noun)
-			}
-			fmt.Fprintf(out, "valid: %s\n", dir)
+			fmt.Fprintf(cmd.OutOrStdout(), "valid: %s\n", dir)
 			return nil
 		},
 	}
+}
+
+// validateSkill checks the skill in dir with skillspec.Validate, prints
+// every violation as "error: …" and every recommendation as "warning: …" to
+// out, and returns an error when the skill has violations. Warnings alone
+// return nil.
+func validateSkill(out io.Writer, dir string) error {
+	res := skillspec.Validate(dir)
+	for _, v := range res.Errors {
+		fmt.Fprintf(out, "error: %s\n", v.Error())
+	}
+	for _, v := range res.Warnings {
+		fmt.Fprintf(out, "warning: %s\n", v.Error())
+	}
+	if res.Valid() {
+		return nil
+	}
+	noun := "errors"
+	if len(res.Errors) == 1 {
+		noun = "error"
+	}
+	return fmt.Errorf("%s is not a valid skill (%d %s)", dir, len(res.Errors), noun)
 }

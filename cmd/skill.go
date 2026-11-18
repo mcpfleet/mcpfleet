@@ -10,8 +10,18 @@ func newSkillCmd() *cobra.Command {
 with a SKILL.md file that teach an AI coding agent a task.
 
 Examples:
-  mcpfleet skill validate ./my-skill`,
+  mcpfleet skill validate ./my-skill
+  mcpfleet skill push ./my-skill
+  mcpfleet skill list
+  mcpfleet skill pull my-skill ~/.claude/skills
+  mcpfleet skill delete my-skill`,
 	}
-	cmd.AddCommand(newSkillValidateCmd())
+	cmd.AddCommand(
+		newSkillValidateCmd(),
+		newSkillPushCmd(),
+		newSkillPullCmd(),
+		newSkillListCmd(),
+		newSkillDeleteCmd(),
+	)
 	return cmd
 }
