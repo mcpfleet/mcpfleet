@@ -58,6 +58,7 @@ func init() {
 		newPushCmd(),
 		newDeleteCmd(),
 		newSecretCmd(),
+		newSkillCmd(),
 	)
 	// Silence default error output – we handle it ourselves
 	rootCmd.SilenceErrors = true
