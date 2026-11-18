@@ -1,0 +1,48 @@
+name: e2e-skills
+
+# Cross-repo end to end: mcpfleet-registry (main) + this CLI, real binaries.
+# push a server and a skill -> apply --skill to Claude Code on an empty HOME
+# -> byte-for-byte diff, skills-ref validate, server in ~/.claude.json.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e-skills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out mcpfleet-registry
+        uses: actions/checkout@v4
+        with:
+          repository: mcpfleet/mcpfleet-registry
+          ref: main
+          path: .e2e/mcpfleet-registry
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: |
+            go.sum
+            .e2e/mcpfleet-registry/go.sum
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Pinned to the same commit as the skills-ref-parity job in ci.yml.
+      - name: Install skills-ref
+        run: pip install "git+https://github.com/agentskills/agentskills@83021e2be457a9b6679148719c1f6074f0ad975e#subdirectory=skills-ref"
+
+      - name: Shellcheck
+        run: shellcheck -s sh scripts/e2e-skills.sh
+
+      - name: Push and apply a skill against the real registry
+        run: sh scripts/e2e-skills.sh .e2e/mcpfleet-registry
