@@ -1,8 +1,6 @@
 package skilldir
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -142,26 +140,4 @@ func TestList_MissingDirectoryIsEmpty(t *testing.T) {
 	list, err := List(filepath.Join(t.TempDir(), "nope"))
 	require.NoError(t, err)
 	assert.Empty(t, list)
-}
-
-func TestLocalHash(t *testing.T) {
-	dir := t.TempDir()
-	sha, err := LocalHash(dir, "notes")
-	require.NoError(t, err)
-	assert.Equal(t, "", sha, "absent skill has no hash")
-
-	writeTree(t, filepath.Join(dir, "notes"), map[string]string{"SKILL.md": notesMD})
-	sha, err = LocalHash(dir, "notes")
-	require.NoError(t, err)
-	want, _ := skillspec.Hash(filepath.Join(dir, "notes"))
-	assert.Equal(t, want, sha)
-}
-
-func TestLocalHash_UnhashableIsError(t *testing.T) {
-	dir := t.TempDir()
-	writeTree(t, filepath.Join(dir, "notes"), map[string]string{"SKILL.md": notesMD})
-	require.NoError(t, os.Symlink("/etc/hostname", filepath.Join(dir, "notes", "link")))
-	_, err := LocalHash(dir, "notes")
-	require.Error(t, err)
-	assert.False(t, errors.Is(err, fs.ErrNotExist))
 }

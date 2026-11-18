@@ -113,21 +113,6 @@ func Install(dir, name string, archive []byte, sha string) error {
 	return nil
 }
 
-// LocalHash returns skillspec.Hash of dir/name, or "" when it does not
-// exist.
-func LocalHash(dir, name string) (string, error) {
-	if err := checkName(name); err != nil {
-		return "", err
-	}
-	target := filepath.Join(dir, name)
-	if _, err := os.Lstat(target); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	} else if err != nil {
-		return "", err
-	}
-	return skillspec.Hash(target)
-}
-
 // List returns every skill in dir, sorted by name: each subdirectory (or
 // symlink to one) whose name does not start with a dot, validated with
 // skillspec. A missing dir holds no skills.
