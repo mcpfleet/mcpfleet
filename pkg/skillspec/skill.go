@@ -29,6 +29,7 @@ const (
 const (
 	RuleDirectory          = "directory"
 	RuleRequiredFile       = "required-file"
+	RuleRead               = "read"
 	RuleFrontmatter        = "frontmatter"
 	RuleYAML               = "yaml"
 	RuleUnknownField       = "unknown-field"

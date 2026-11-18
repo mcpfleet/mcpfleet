@@ -44,7 +44,7 @@ func Validate(dir string) Result {
 	if err != nil {
 		var v Violation
 		if !errors.As(err, &v) {
-			v = Violation{FieldSkillMD, RuleRequiredFile, err.Error()}
+			v = Violation{FieldSkillMD, RuleRead, err.Error()}
 		}
 		res.Errors = append(res.Errors, v)
 		return res

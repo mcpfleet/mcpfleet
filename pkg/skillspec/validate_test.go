@@ -145,3 +145,15 @@ func TestValidate_MissingDirectory(t *testing.T) {
 	res := Validate(filepath.Join(t.TempDir(), "nope"))
 	assert.Equal(t, []fieldRule{{FieldDirectory, RuleDirectory}}, fieldRules(res.Errors))
 }
+
+func TestValidate_UnreadableSkillMD(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read any file")
+	}
+	dir := filepath.Join(t.TempDir(), "unreadable")
+	require.NoError(t, os.Mkdir(dir, 0o755))
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\nname: unreadable\ndescription: d\n---\n"), 0o000))
+	res := Validate(dir)
+	assert.Equal(t, []fieldRule{{FieldSkillMD, RuleRead}}, fieldRules(res.Errors))
+}
