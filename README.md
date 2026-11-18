@@ -254,6 +254,11 @@ mcpfleet secret set <name>   Store or update a secret in the local vault (hidden
 mcpfleet secret list         List secret names (never values)
 mcpfleet secret rm <name>    Remove a secret from the local vault
 mcpfleet skill validate <dir>  Check an Agent Skills directory against the spec (exit 1 on any error)
+mcpfleet skill push <dir>      Validate a skill and upload it to the registry
+mcpfleet skill pull <name> [dir]  Download a skill into <dir>/<name> (default: current directory)
+  --force                      Replace an existing <dir>/<name>
+mcpfleet skill list          List the skills in the registry
+mcpfleet skill delete <name>   Remove a skill from the registry
 
 Global flags:
   -v, --verbose                Print debug logs to stderr
@@ -262,6 +267,10 @@ Global flags:
 Without `--verbose`, commands print only warnings and errors to stderr; their results go to stdout.
 
 `mcpfleet skill validate` checks a skill directory against the [Agent Skills specification](https://agentskills.io/specification) and gives the same verdict as the reference validator `skills-ref`. It prints one line per violation (`error: name: must match the directory name "my-skill" (got "other")`) and exits with 1. Recommendations of the spec, such as keeping `SKILL.md` under 500 lines, are printed as `warning: …` and keep exit code 0.
+
+`mcpfleet skill push <dir>` runs the same validation first: a skill with violations is never uploaded, warnings are printed and do not stop it. The directory goes to the registry as a tar.gz archive of at most 1 MiB, with one top-level directory named after the skill; it keeps the executable bit of each file (all other permission bits become 0644 or 0755) and leaves `.git` directories out. Every server the skill lists in `metadata.mcpfleet-requires` must already be in the registry, otherwise push names the missing ones.
+
+`mcpfleet skill pull <name> [dir]` unpacks the skill into `<dir>/<name>/` only after its sha256 matches the hash the registry sends; an archive with a link, an absolute path or `..` is rejected and nothing is written. An existing `<dir>/<name>` is replaced only with `--force`. `mcpfleet skill list` shows each skill's name, description, required servers and the first 12 characters of its sha256.
 
 ## Configuration
 
