@@ -62,6 +62,63 @@ func Decide(local, state, remote string, force bool) Action {
 	return Conflict
 }
 
+// ErrConflict marks an apply that left at least one skill alone because it
+// was changed locally; applying again with force replaces it.
+var ErrConflict = errors.New("skill changed locally")
+
+// Status is the state of one registry skill on one agent, as the TUI shows
+// it.
+type Status int
+
+const (
+	// NotInstalled: the agent has no copy of the skill.
+	NotInstalled Status = iota
+	// UpToDate: the local copy is the registry's.
+	UpToDate
+	// OutOfDate: the local copy is what mcpfleet last installed, and the
+	// registry has a newer one; apply replaces it.
+	OutOfDate
+	// Modified: the local copy differs from both the registry and what
+	// mcpfleet last installed; apply needs force.
+	Modified
+	// NotConformant: the local copy does not pass the Agent Skills spec.
+	NotConformant
+	// Unsupported: the agent has no skills support.
+	Unsupported
+)
+
+func (s Status) String() string {
+	switch s {
+	case NotInstalled:
+		return "not installed"
+	case UpToDate:
+		return "installed"
+	case OutOfDate:
+		return "out of date"
+	case Modified:
+		return "modified locally"
+	case NotConformant:
+		return "not spec-conformant"
+	case Unsupported:
+		return "no skills support"
+	}
+	return fmt.Sprintf("Status(%d)", int(s))
+}
+
+// StatusOf returns the status of a skill from the same hashes Decide takes:
+// the action apply would take without force, put as a state.
+func StatusOf(local, state, remote string) Status {
+	switch Decide(local, state, remote, false) {
+	case Install:
+		return NotInstalled
+	case Skip:
+		return UpToDate
+	case Overwrite:
+		return OutOfDate
+	}
+	return Modified
+}
+
 // Entry is the record of one installed skill.
 type Entry struct {
 	SHA256      string    `json:"sha256"`
