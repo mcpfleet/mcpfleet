@@ -50,7 +50,13 @@ func runRootIO(t *testing.T, stdin io.Reader, args ...string) (string, string, e
 func resetFlags(c *cobra.Command) {
 	c.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Changed {
-			_ = f.Value.Set(f.DefValue)
+			// Set appends to a slice or array flag once it was set, so
+			// those are emptied instead.
+			if sv, ok := f.Value.(pflag.SliceValue); ok {
+				_ = sv.Replace(nil)
+			} else {
+				_ = f.Value.Set(f.DefValue)
+			}
 			f.Changed = false
 		}
 	})

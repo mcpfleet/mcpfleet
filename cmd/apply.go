@@ -12,11 +12,17 @@ import (
 	"github.com/mcpfleet/mcpfleet/internal/adapters"
 	"github.com/mcpfleet/mcpfleet/internal/registry"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
+	"github.com/mcpfleet/mcpfleet/internal/skillstate"
 	"github.com/mcpfleet/mcpfleet/internal/vault"
 )
 
 func newApplyCmd() *cobra.Command {
-	var tags []string
+	var (
+		tags      []string
+		skills    []string
+		allSkills bool
+		force     bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "apply <agent>",
@@ -41,14 +47,32 @@ file is written. A secret holds the whole header value, e.g. "Bearer <token>".
 The env of a remote server is not written to any agent, and its secrets are
 not read.
 
+--skill <name> (repeatable) or --all-skills also installs skills from the
+registry. The servers a skill lists in metadata.mcpfleet-requires are applied
+with it, even when --tag leaves them out. Skills go to the agent's user-level
+skills directory (claude-code: ~/.claude/skills/<name>/, or
+$CLAUDE_CONFIG_DIR/skills; windsurf: ~/.codeium/windsurf/skills/<name>/). An
+agent without skills support gets the required servers and a "warning: agent
+<agent> does not support skills, skipping skill <name>" line.
+
+A skill already on the agent is replaced only when it is unchanged since
+mcpfleet last installed it (the hash is kept in
+~/.config/mcpfleet/skills-state.json), or with --force. A skill changed
+locally is reported as a conflict and left alone, and apply exits non-zero.
+
 Examples:
   mcpfleet apply cursor
   mcpfleet apply --tag dev cursor
   mcpfleet apply --tag dev --tag vcs claude-code
-  mcpfleet apply claude-desktop`,
+  mcpfleet apply claude-desktop
+  mcpfleet apply --skill gh-notes claude-code
+  mcpfleet apply --all-skills --tag dev claude-code`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentName := args[0]
+			if allSkills && len(skills) > 0 {
+				return fmt.Errorf("use either --skill or --all-skills, not both")
+			}
 			log.Debug("Applying MCP servers", "agent", agentName, "tags", tags)
 
 			// 1. Resolve adapter.
@@ -64,16 +88,39 @@ Examples:
 			}
 			registryURL, registrySource := registry.BaseURL()
 			log.Debug("Using registry", "url", registryURL, "source", registrySource)
-			servers, err := client.ListServers(context.Background())
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			all, err := client.ListServers(ctx)
 			if err != nil {
 				return err
 			}
-			log.Debug("Fetched servers from registry", "count", len(servers))
+			log.Debug("Fetched servers from registry", "count", len(all))
+			servers := all
 
 			// 3. Filter by tags if provided.
 			if len(tags) > 0 {
 				servers = filterByTags(servers, tags)
 				log.Debug("Filtered servers by tag", "count", len(servers))
+			}
+
+			// 3b. Fetch the requested skills and add the servers they
+			// require. Nothing is written before every skill (and, for an
+			// agent with skills support, its archive) is fetched.
+			plan, err := fetchSkills(ctx, client, adapter, skills, allSkills)
+			if err != nil {
+				return err
+			}
+			servers, err = addRequiredServers(servers, all, plan)
+			if err != nil {
+				return err
+			}
+			var state *skillstate.State
+			if _, ok := adapter.(adapters.SkillAdapter); ok && len(plan) > 0 {
+				if state, err = loadSkillState(); err != nil {
+					return err
+				}
 			}
 
 			// 4. Leave out the servers this agent cannot hold, with a
@@ -100,10 +147,15 @@ Examples:
 				}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\u2713 Applied %d MCP server(s) to %s\n", len(servers), agentName)
-			return nil
+
+			// 7. Install the skills.
+			return applySkills(cmd, adapter, plan, state, force)
 		},
 	}
 	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Filter servers by tag (can be used multiple times)")
+	cmd.Flags().StringArrayVar(&skills, "skill", nil, "Install this skill from the registry (can be used multiple times)")
+	cmd.Flags().BoolVar(&allSkills, "all-skills", false, "Install every skill in the registry")
+	cmd.Flags().BoolVar(&force, "force", false, "Replace skills that were changed locally")
 	return cmd
 }
 

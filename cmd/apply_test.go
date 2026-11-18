@@ -191,7 +191,8 @@ func TestApplyHelp_HasNoAllFlag(t *testing.T) {
 	out, _, err := runRootIO(t, nil, "apply", "--help")
 	require.NoError(t, err)
 	assert.Contains(t, out, "--tag")
-	assert.NotContains(t, out, "--all")
+	// --all-skills is a flag of its own; a bare --all must not come back.
+	assert.NotRegexp(t, `--all\s`, out)
 }
 
 // isolateAgentConfigs points the agent config locations that HOME alone
