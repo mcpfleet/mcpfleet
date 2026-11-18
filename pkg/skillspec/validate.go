@@ -18,6 +18,8 @@ const (
 	MaxNameLength          = 64
 	MaxDescriptionLength   = 1024
 	MaxCompatibilityLength = 500
+	// RecommendedMaxLines is the spec's recommended length of SKILL.md.
+	RecommendedMaxLines = 500
 )
 
 // allowedFields are the top-level frontmatter keys the spec defines.
@@ -71,7 +73,40 @@ func Validate(dir string) Result {
 		res.Errors = append(res.Errors, validateCompatibility(node)...)
 	}
 
+	res.Warnings = warnings(doc)
 	return res
+}
+
+// warnings reports the spec's recommendations and the type rules skills-ref
+// does not enforce: a non-string license, allowed-tools or metadata value
+// breaks the spec text, but skills-ref accepts the skill, so the verdict stays
+// valid.
+func warnings(doc *document) []Violation {
+	var ws []Violation
+	if doc.lines > RecommendedMaxLines {
+		ws = append(ws, Violation{FieldSkillMD, RuleLineCount,
+			fmt.Sprintf("has %d lines, the spec recommends at most %d", doc.lines, RecommendedMaxLines)})
+	}
+	for _, key := range []string{"license", "allowed-tools"} {
+		if node, ok := doc.fields[key]; ok && node.Kind != yaml.ScalarNode {
+			ws = append(ws, Violation{key, RuleType, "should be a string"})
+		}
+	}
+	if node, ok := doc.fields["metadata"]; ok {
+		switch {
+		case node.Kind == yaml.ScalarNode && node.Tag == "!!null":
+			// "metadata:" with no value is an empty mapping.
+		case node.Kind != yaml.MappingNode:
+			ws = append(ws, Violation{"metadata", RuleType, "should be a mapping of string keys to string values"})
+		default:
+			for i := 0; i+1 < len(node.Content); i += 2 {
+				if node.Content[i+1].Kind != yaml.ScalarNode {
+					ws = append(ws, Violation{"metadata." + node.Content[i].Value, RuleStringValues, "should be a string"})
+				}
+			}
+		}
+	}
+	return ws
 }
 
 func isAllowedField(key string) bool {
