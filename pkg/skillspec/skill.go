@@ -91,8 +91,9 @@ type document struct {
 }
 
 // Parse reads the skill in dir. It fails with a Violation when SKILL.md is
-// missing or its frontmatter cannot be read; it does not check the field
-// rules, which is Validate's job.
+// missing or its frontmatter cannot be read, and with Hash's error when the
+// directory cannot be hashed; it does not check the field rules, which is
+// Validate's job.
 func Parse(dir string) (*Skill, error) {
 	doc, err := readDocument(dir)
 	if err != nil {
@@ -123,6 +124,9 @@ func Parse(dir string) (*Skill, error) {
 	}
 	if req, ok := s.Metadata[MetadataRequiresKey]; ok {
 		s.Requires = strings.Fields(req)
+	}
+	if s.SHA256, err = Hash(dir); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
