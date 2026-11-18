@@ -13,6 +13,7 @@ import (
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters/windsurf"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
+	"github.com/mcpfleet/mcpfleet/pkg/skillspec"
 )
 
 // isolate points the home directory at a fresh temp dir and returns it.
@@ -182,4 +183,33 @@ func TestList_MapsRemoteServers(t *testing.T) {
 			Headers: map[string]schema.EnvVar{"X": {Value: "y"}}},
 		{Name: "by-url", Transport: "http", URL: "https://b.example/sse", Env: map[string]schema.EnvVar{}},
 	}, got)
+}
+
+func TestSkillsDir_UnderCodeiumWindsurf(t *testing.T) {
+	home := isolate(t)
+	assert.Equal(t, filepath.Join(home, ".codeium", "windsurf", "skills"), windsurf.New().SkillsDir())
+}
+
+func TestApplySkill_AndListSkills(t *testing.T) {
+	home := isolate(t)
+	src := filepath.Join(t.TempDir(), "notes")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "SKILL.md"),
+		[]byte("---\nname: notes\ndescription: Take notes.\n---\n"), 0o644))
+	archive, err := skillspec.Pack(src, "notes")
+	require.NoError(t, err)
+	sha, err := skillspec.Hash(src)
+	require.NoError(t, err)
+
+	a := windsurf.New()
+	require.NoError(t, a.ApplySkill("notes", archive, sha))
+	got, err := skillspec.Hash(filepath.Join(home, ".codeium", "windsurf", "skills", "notes"))
+	require.NoError(t, err)
+	assert.Equal(t, sha, got)
+
+	list, err := a.ListSkills()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "notes", list[0].Name)
+	assert.True(t, list[0].Result.Valid())
 }

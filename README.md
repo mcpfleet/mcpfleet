@@ -248,6 +248,9 @@ mcpfleet push <file>         Add or update the server definitions from a YAML fi
 mcpfleet pull <file>         Write every server definition from the registry to a YAML file
 mcpfleet apply <agent>       Apply registry servers to an agent config
   --tag <tag>                  Apply only servers with the given tag (default: all servers)
+  --skill <name>               Also install this skill and the servers it requires (repeatable)
+  --all-skills                 Also install every skill in the registry
+  --force                      Replace skills that were changed locally
 mcpfleet delete <name>       Remove an MCP server from the registry
 mcpfleet secret set <name>   Store or update a secret in the local vault (hidden prompt)
   --stdin                      Read the value from standard input
@@ -271,6 +274,40 @@ Without `--verbose`, commands print only warnings and errors to stderr; their re
 `mcpfleet skill push <dir>` runs the same validation first: a skill with violations is never uploaded, warnings are printed and do not stop it. The directory goes to the registry as a tar.gz archive of at most 1 MiB, with one top-level directory named after the skill; it keeps the executable bit of each file (all other permission bits become 0644 or 0755) and leaves `.git` directories out. Every server the skill lists in `metadata.mcpfleet-requires` must already be in the registry, otherwise push names the missing ones.
 
 `mcpfleet skill pull <name> [dir]` unpacks the skill into `<dir>/<name>/` only after its sha256 matches the hash the registry sends; an archive with a link, an absolute path or `..` is rejected and nothing is written. An existing `<dir>/<name>` is replaced only with `--force`. `mcpfleet skill list` shows each skill's name, description, required servers and the first 12 characters of its sha256.
+
+## Skills
+
+mcpfleet stores [Agent Skills](https://agentskills.io/specification) in the registry next to the servers (`mcpfleet skill push`) and installs them on agents with `apply`:
+
+```bash
+mcpfleet apply --skill gh-notes claude-code      # one skill (repeat --skill for more)
+mcpfleet apply --all-skills --tag dev claude-code
+```
+
+- A skill lists the MCP servers it needs in its frontmatter, separated by spaces:
+
+  ```yaml
+  metadata:
+    mcpfleet-requires: github
+  ```
+
+  `apply` writes those servers to the agent together with the skill, even when `--tag` leaves them out, and writes each server once. If a required server is no longer in the registry, `apply` stops before it writes anything.
+- The skill is installed byte for byte into the agent's skills directory as `<skills dir>/<name>/`, after its sha256 matches the hash the registry sends. It is unpacked next to its target and moved into place in one step, so a failed `apply` never leaves a half-written skill.
+- mcpfleet records the hash of every skill it installs in `~/.config/mcpfleet/skills-state.json`, never inside the skill directory. On the next `apply`, a skill that is already current is left alone. A copy that is unchanged since the last `apply` is replaced with the registry's version. A copy you edited, or one mcpfleet did not install, is left alone and reported as `conflict: skill <name> at <path> was changed locally …`, and `apply` exits with 1 after applying everything else. `--force` replaces it.
+- An agent without skills support still gets the required servers, and `apply` prints `warning: agent <agent> does not support skills, skipping skill <name>`.
+
+Agents and their native Agent Skills support:
+
+| Agent | Native Agent Skills | User-level skills directory | `apply --skill` |
+|-------|---------------------|-----------------------------|-----------------|
+| `claude-code` | yes | `~/.claude/skills/<name>/`; `$CLAUDE_CONFIG_DIR/skills/<name>/` when `CLAUDE_CONFIG_DIR` is set | installs |
+| `windsurf` | yes | `~/.codeium/windsurf/skills/<name>/` (Windows: `%USERPROFILE%\.codeium\windsurf\skills`) | installs |
+| `cursor` | yes | `~/.cursor/skills/<name>/` (Cursor also reads `~/.agents/skills/` and `~/.claude/skills/`) | not yet: servers only |
+| `crush` | yes | `~/.config/crush/skills/<name>/` or `$XDG_CONFIG_HOME/crush/skills/`; Windows: `%LOCALAPPDATA%\crush\skills` (Crush also reads `~/.agents/skills/` and `~/.claude/skills/`) | not yet: servers only |
+| `zed` | yes (Zed Agent only) | `~/.agents/skills/<name>/`, a directory other agents read too | not yet: servers only |
+| `claude-desktop` | skills are uploaded as a zip in the app's settings | none documented | servers only |
+
+Skills that `apply` installs for Claude Code are also picked up by Cursor and Crush, which read `~/.claude/skills/` as well.
 
 ## Configuration
 

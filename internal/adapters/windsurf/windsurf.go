@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
+	"github.com/mcpfleet/mcpfleet/internal/adapters/skilldir"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
@@ -155,4 +156,32 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		servers = append(servers, srv)
 	}
 	return servers, nil
+}
+
+// SkillsDir returns Windsurf's global skills directory,
+// ~/.codeium/windsurf/skills, next to its MCP config on every OS.
+func (a *Adapter) SkillsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".codeium", "windsurf", "skills")
+}
+
+// ApplySkill installs the skill into SkillsDir()/name.
+func (a *Adapter) ApplySkill(name string, archive []byte, sha256 string) error {
+	dir, err := jsonfile.RequireAbs(a.Name(), a.SkillsDir(), jsonfile.HomeVar(runtime.GOOS))
+	if err != nil {
+		return err
+	}
+	if err := skilldir.Install(dir, name, archive, sha256); err != nil {
+		return fmt.Errorf("%s: install skill %q: %w", a.Name(), name, err)
+	}
+	return nil
+}
+
+// ListSkills returns the skills in SkillsDir().
+func (a *Adapter) ListSkills() ([]skilldir.InstalledSkill, error) {
+	dir, err := jsonfile.RequireAbs(a.Name(), a.SkillsDir(), jsonfile.HomeVar(runtime.GOOS))
+	if err != nil {
+		return nil, err
+	}
+	return skilldir.List(dir)
 }

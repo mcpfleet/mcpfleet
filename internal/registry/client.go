@@ -318,6 +318,11 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 
 // --- token helpers ---
 
+// ConfigDir returns the mcpfleet config directory (~/.config/mcpfleet),
+// which holds the token, the saved registry URL, the vault and the skills
+// state.
+func ConfigDir() (string, error) { return configDir() }
+
 // configDir returns the mcpfleet config directory (~/.config/mcpfleet).
 func configDir() (string, error) {
 	home, err := os.UserHomeDir()

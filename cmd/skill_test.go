@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mcpfleet/mcpfleet/internal/schema"
 	"github.com/mcpfleet/mcpfleet/pkg/skillspec"
 )
 
@@ -39,6 +40,8 @@ type skillRegistry struct {
 	// noSHA drops the header.
 	sha   string
 	noSHA bool
+	// serverDefs is what GET /v1/servers returns.
+	serverDefs []schema.Server
 
 	mu     sync.Mutex
 	skills map[string]*storedSkill
@@ -89,6 +92,15 @@ func (r *skillRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	if req.Header.Get("Authorization") != "Bearer tok" {
 		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if req.Method == http.MethodGet && req.URL.Path == "/v1/servers" {
+		w.Header().Set("Content-Type", "application/json")
+		defs := r.serverDefs
+		if defs == nil {
+			defs = []schema.Server{}
+		}
+		_ = json.NewEncoder(w).Encode(defs)
 		return
 	}
 	rest := strings.TrimPrefix(req.URL.Path, "/v1/skills")

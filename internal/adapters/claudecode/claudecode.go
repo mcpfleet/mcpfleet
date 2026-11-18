@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/mcpfleet/mcpfleet/internal/adapters/jsonfile"
+	"github.com/mcpfleet/mcpfleet/internal/adapters/skilldir"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
@@ -153,4 +154,46 @@ func (a *Adapter) List() ([]schema.Server, error) {
 		})
 	}
 	return servers, nil
+}
+
+// SkillsDir returns Claude Code's personal skills directory:
+// $CLAUDE_CONFIG_DIR/skills when the variable is set (it takes the place of
+// ~/.claude), otherwise ~/.claude/skills on every OS
+// (https://code.claude.com/docs/en/skills).
+func (a *Adapter) SkillsDir() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "skills")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", "skills")
+}
+
+// skillsDir is SkillsDir for reading and writing; it refuses a relative
+// path the way path does.
+func (a *Adapter) skillsDir() (string, error) {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" && !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("%s: CLAUDE_CONFIG_DIR must be an absolute path (got %q)", a.Name(), dir)
+	}
+	return jsonfile.RequireAbs(a.Name(), a.SkillsDir(), jsonfile.HomeVar(runtime.GOOS), "CLAUDE_CONFIG_DIR")
+}
+
+// ApplySkill installs the skill into SkillsDir()/name.
+func (a *Adapter) ApplySkill(name string, archive []byte, sha256 string) error {
+	dir, err := a.skillsDir()
+	if err != nil {
+		return err
+	}
+	if err := skilldir.Install(dir, name, archive, sha256); err != nil {
+		return fmt.Errorf("%s: install skill %q: %w", a.Name(), name, err)
+	}
+	return nil
+}
+
+// ListSkills returns the skills in SkillsDir().
+func (a *Adapter) ListSkills() ([]skilldir.InstalledSkill, error) {
+	dir, err := a.skillsDir()
+	if err != nil {
+		return nil, err
+	}
+	return skilldir.List(dir)
 }

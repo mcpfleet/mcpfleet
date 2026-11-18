@@ -160,3 +160,17 @@ func skippedServers(skipped []adapters.Skipped) []schema.Server {
 	}
 	return out
 }
+
+// TestSkillAdapters pins which agents install skills: the ones with a
+// documented user-level skills directory that mcpfleet supports.
+func TestSkillAdapters(t *testing.T) {
+	var got []string
+	for _, a := range adapters.All() {
+		if _, ok := a.(adapters.SkillAdapter); ok {
+			got = append(got, a.Name())
+		}
+	}
+	if want := []string{"claude-code", "windsurf"}; !slices.Equal(got, want) {
+		t.Errorf("skill adapters = %v, want %v", got, want)
+	}
+}

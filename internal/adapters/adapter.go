@@ -3,6 +3,7 @@ package adapters
 import (
 	"fmt"
 
+	"github.com/mcpfleet/mcpfleet/internal/adapters/skilldir"
 	"github.com/mcpfleet/mcpfleet/internal/schema"
 )
 
@@ -27,6 +28,25 @@ type Adapter interface {
 
 	// List reads currently configured servers from the agent config.
 	List() ([]schema.Server, error)
+}
+
+// SkillAdapter is implemented by the adapters of agents that read Agent
+// Skills from a user-level skills directory. It is optional: apply detects it
+// with a type assertion on Adapter, and agents without it get their servers
+// but no skills.
+type SkillAdapter interface {
+	// SkillsDir returns the agent's user-level skills directory; each skill
+	// is the subdirectory named after it.
+	SkillsDir() string
+
+	// ApplySkill installs archive (a skillspec.Pack tar.gz) as the skill
+	// name, replacing an existing copy atomically, once its skillspec hash
+	// matches sha256.
+	ApplySkill(name string, archive []byte, sha256 string) error
+
+	// ListSkills returns every skill in SkillsDir, including ones mcpfleet
+	// did not install, each validated with skillspec.
+	ListSkills() ([]skilldir.InstalledSkill, error)
 }
 
 // Skipped is a server that apply leaves out of an agent's config, with the

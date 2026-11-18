@@ -67,6 +67,11 @@ jobs:
           MCPFLEET_REQUIRE_SKILLS_REF: '1'
         run: go test ./cmd -run '^TestSkillRoundTrip$' -count=1 -v
 
+      - name: Skill installed by apply passes skills-ref
+        env:
+          MCPFLEET_REQUIRE_SKILLS_REF: '1'
+        run: go test ./cmd -run '^TestApplySkillE2E$' -count=1 -v
+
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
