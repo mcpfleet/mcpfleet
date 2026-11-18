@@ -37,6 +37,31 @@ jobs:
       - name: Run tests
         run: go test ./... -v -count=1
 
+  skills-ref-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Pinned, so a change upstream cannot turn the job red on its own.
+      - name: Install skills-ref
+        run: pip install "git+https://github.com/agentskills/agentskills@83021e2be457a9b6679148719c1f6074f0ad975e#subdirectory=skills-ref"
+
+      - name: Shellcheck
+        run: shellcheck -s sh scripts/skills-ref-parity.sh
+
+      - name: Compare verdicts with skills-ref
+        run: sh scripts/skills-ref-parity.sh
+
   goreleaser-check:
     runs-on: ubuntu-latest
     steps:
