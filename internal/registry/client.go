@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mcpfleet/mcpfleet/internal/schema"
+	"github.com/mcpfleet/mcpfleet/pkg/skillspec"
 )
 
 const (
@@ -36,6 +37,9 @@ var (
 	ErrConflict = errors.New("registry: conflict")
 	// ErrValidation matches a 422 response: the registry rejected the body.
 	ErrValidation = errors.New("registry: validation failed")
+	// ErrTooLarge matches a 413 response: the body is above the registry's
+	// limit, e.g. a skill archive above 1 MiB.
+	ErrTooLarge = errors.New("registry: archive too large")
 )
 
 // validationFailed is the generic "detail" the registry sends with a 422; the
@@ -46,10 +50,40 @@ const validationFailed = "validation failed"
 const maxErrorBody = 64 << 10
 
 // APIError is a non-2xx response from the registry (other than 401).
-// Detail is the "detail" field of the application/problem+json body, if any.
+// Detail is the "detail" field of the application/problem+json body followed
+// by its errors[] entries, if any; Errors keeps those entries as sent.
 type APIError struct {
 	StatusCode int
 	Detail     string
+	Errors     []ProblemError
+}
+
+// ProblemError is one errors[] entry of a problem+json body: where the
+// problem is (e.g. "body.url", "metadata.mcpfleet-requires"), what it is and
+// the offending value.
+type ProblemError struct {
+	Location string `json:"location"`
+	Message  string `json:"message"`
+	Value    any    `json:"value"`
+}
+
+// requiresLocation is the errors[] location of a server a skill requires
+// but the registry does not have.
+const requiresLocation = "metadata." + skillspec.MetadataRequiresKey
+
+// MissingServers returns the servers a rejected skill requires that the
+// registry does not have, in the registry's order; nil for any other error.
+func (e *APIError) MissingServers() []string {
+	if e.StatusCode != http.StatusUnprocessableEntity {
+		return nil
+	}
+	var names []string
+	for _, pe := range e.Errors {
+		if name, ok := pe.Value.(string); ok && pe.Location == requiresLocation {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // Error names the failure for 404, 409 and 422 and gives the status code for
@@ -62,6 +96,8 @@ func (e *APIError) Error() string {
 		msg = ErrNotFound.Error()
 	case http.StatusConflict:
 		msg = ErrConflict.Error()
+	case http.StatusRequestEntityTooLarge:
+		msg = ErrTooLarge.Error()
 	case http.StatusUnprocessableEntity:
 		msg = ErrValidation.Error()
 		if detail == validationFailed {
@@ -78,8 +114,8 @@ func (e *APIError) Error() string {
 	return msg
 }
 
-// Is lets errors.Is match ErrNotFound, ErrConflict and ErrValidation by
-// status code.
+// Is lets errors.Is match ErrNotFound, ErrConflict, ErrValidation and
+// ErrTooLarge by status code.
 func (e *APIError) Is(target error) bool {
 	switch target {
 	case ErrNotFound:
@@ -88,23 +124,22 @@ func (e *APIError) Is(target error) bool {
 		return e.StatusCode == http.StatusConflict
 	case ErrValidation:
 		return e.StatusCode == http.StatusUnprocessableEntity
+	case ErrTooLarge:
+		return e.StatusCode == http.StatusRequestEntityTooLarge
 	}
 	return false
 }
 
-// readDetail returns the "detail" field of a problem+json error body
-// followed by its errors[] entries ("location: message", joined by "; "),
-// or "" when the body is empty or not JSON.
-func readDetail(r io.Reader) string {
+// readProblem decodes a problem+json error body. The detail it returns is
+// the "detail" field followed by the errors[] entries ("location: message",
+// joined by "; "), or "" when the body is empty or not JSON.
+func readProblem(r io.Reader) (string, []ProblemError) {
 	var p struct {
-		Detail string `json:"detail"`
-		Errors []struct {
-			Location string `json:"location"`
-			Message  string `json:"message"`
-		} `json:"errors"`
+		Detail string         `json:"detail"`
+		Errors []ProblemError `json:"errors"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r, maxErrorBody)).Decode(&p); err != nil {
-		return ""
+		return "", nil
 	}
 	var entries []string
 	for _, e := range p.Errors {
@@ -115,13 +150,13 @@ func readDetail(r io.Reader) string {
 			entries = append(entries, e.Message)
 		}
 	}
-	if len(entries) == 0 {
-		return p.Detail
+	switch {
+	case len(entries) == 0:
+		return p.Detail, p.Errors
+	case p.Detail == "":
+		return strings.Join(entries, "; "), p.Errors
 	}
-	if p.Detail == "" {
-		return strings.Join(entries, "; ")
-	}
-	return p.Detail + ": " + strings.Join(entries, "; ")
+	return p.Detail + ": " + strings.Join(entries, "; "), p.Errors
 }
 
 // URLSource names where the effective registry URL came from.
@@ -170,26 +205,45 @@ func New() (*Client, error) {
 	}, nil
 }
 
-// do executes an authenticated HTTP request and decodes the JSON response into out (may be nil).
+// do executes an authenticated JSON request: body (may be nil) is sent as
+// JSON and the response is decoded into out (may be nil).
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) (*http.Response, error) {
-	var bodyReader *bytes.Reader
+	var (
+		payload     []byte
+		contentType string
+	)
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("registry: marshal request: %w", err)
 		}
-		bodyReader = bytes.NewReader(b)
-	} else {
-		bodyReader = bytes.NewReader(nil)
+		payload, contentType = b, "application/json"
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
+	resp, err := c.send(ctx, method, path, contentType, "application/json", payload)
+	if err != nil {
+		return resp, err
+	}
+	defer resp.Body.Close()
+	if out != nil && resp.ContentLength != 0 {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return resp, fmt.Errorf("registry: decode response: %w", err)
+		}
+	}
+	return resp, nil
+}
+
+// send executes an authenticated HTTP request with a raw body (may be nil)
+// of contentType. On a 2xx response the caller reads and closes resp.Body;
+// any other response is turned into an error and its body is closed.
+func (c *Client) send(ctx context.Context, method, path, contentType, accept string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("registry: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", accept)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -202,17 +256,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 		return nil, fmt.Errorf("registry: request failed: %w", err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
 		return resp, fmt.Errorf("registry: token invalid or expired — run 'mcpfleet auth login'")
 	}
 	if resp.StatusCode >= 300 {
-		return resp, &APIError{StatusCode: resp.StatusCode, Detail: readDetail(resp.Body)}
-	}
-	if out != nil && resp.ContentLength != 0 {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return resp, fmt.Errorf("registry: decode response: %w", err)
-		}
+		defer resp.Body.Close()
+		detail, errs := readProblem(resp.Body)
+		return resp, &APIError{StatusCode: resp.StatusCode, Detail: detail, Errors: errs}
 	}
 	return resp, nil
 }
